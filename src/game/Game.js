@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import sdk from '@smoud/playable-sdk';
 import { CONFIG } from '@/config';
 import { World } from './World';
 import { AnimalManager } from './Animals';
@@ -269,7 +270,7 @@ export class Game {
         });
         
         document.getElementById('cta')?.addEventListener('click', () => {
-            window.open(CONFIG.ctaUrl, '_blank');
+            sdk.install(); // Redirects to store via SDK
         });
         
         window.addEventListener('resize', () => this.resize());
@@ -472,6 +473,7 @@ export class Game {
     showCTA() {
         const el = document.getElementById('cta');
         if (el) el.style.display = 'block';
+        sdk.finish(); // Mark playable as complete
     }
     
     resize() {

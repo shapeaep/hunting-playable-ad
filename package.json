@@ -7,7 +7,18 @@
     "build": "webpack --mode production",
     "build:analyze": "webpack --mode production --analyze",
     "serve": "node server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    
+    "playable": "playable-scripts build",
+    "playable:google": "playable-scripts build --network google",
+    "playable:facebook": "playable-scripts build --network facebook",
+    "playable:unity": "playable-scripts build --network unity",
+    "playable:ironsource": "playable-scripts build --network ironsource",
+    "playable:applovin": "playable-scripts build --network applovin",
+    "playable:mintegral": "playable-scripts build --network mintegral",
+    "playable:vungle": "playable-scripts build --network vungle",
+    "playable:tiktok": "playable-scripts build --network tiktok",
+    "playable:all": "playable-scripts build --all"
   },
   "devDependencies": {
     "css-loader": "^6.8.1",
@@ -21,7 +32,8 @@
     "webpack-dev-server": "^4.15.1"
   },
   "dependencies": {
+    "@smoud/playable-scripts": "^1.0.40",
+    "@smoud/playable-sdk": "^1.0.23",
     "three": "^0.160.0"
   }
 }
-
