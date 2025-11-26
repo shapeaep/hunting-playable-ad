@@ -1,0 +1,27 @@
+{
+  "name": "hunting-playable-ad",
+  "version": "1.0.0",
+  "description": "Playable ad for hunting mobile game",
+  "scripts": {
+    "dev": "webpack serve --mode development --open",
+    "build": "webpack --mode production",
+    "build:analyze": "webpack --mode production --analyze",
+    "serve": "node server.js",
+    "start": "node server.js"
+  },
+  "devDependencies": {
+    "css-loader": "^6.8.1",
+    "html-webpack-plugin": "^5.5.3",
+    "mini-css-extract-plugin": "^2.7.6",
+    "style-loader": "^3.3.3",
+    "terser-webpack-plugin": "^5.3.9",
+    "webpack": "^5.89.0",
+    "webpack-bundle-analyzer": "^4.10.1",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^4.15.1"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}
+

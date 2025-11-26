@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Hunting Game - Playable Ad</title>
+</head>
+<body>
+    <canvas id="game"></canvas>
+    
+    <div id="ui">
+        <div id="scope">
+            <div class="vignette"></div>
+            <div class="inner-ring"></div>
+        </div>
+        
+        <div id="crosshair">
+            <div class="h-line"></div>
+            <div class="v-line"></div>
+            <div class="center"></div>
+        </div>
+        
+        <div id="score-panel">
+            <div class="label">Score</div>
+            <div class="value" id="score">0</div>
+        </div>
+        
+        <div id="target-info">
+            <span class="name" id="target-name">Deer</span>
+            <span class="distance" id="target-distance">45m</span>
+        </div>
+        
+        <div id="hint">Use joystick to aim • Tap button to shoot</div>
+        
+        <div id="joystick-zone">
+            <div id="joystick-base"></div>
+            <div id="joystick-stick"></div>
+        </div>
+        
+        <div id="shoot-btn"></div>
+        
+        <div id="hit-effect"></div>
+        <div id="bullet-time">
+            <div class="blur"></div>
+            <div class="vignette"></div>
+        </div>
+        <div id="slowmo-text">● BULLET CAM</div>
+        
+        <button id="cta">Download Now!</button>
+    </div>
+</body>
+</html>
+
