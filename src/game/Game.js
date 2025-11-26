@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import sdk from '@smoud/playable-sdk';
-import { CONFIG } from '@/config';
+import { CONFIG } from '../config';
 import { World } from './World';
 import { AnimalManager } from './Animals';
 import { BulletTime } from './BulletTime';

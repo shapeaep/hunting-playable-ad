@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
@@ -6,8 +7,12 @@ const TerserPlugin = require('terser-webpack-plugin');
 module.exports = (env, argv) => {
     const isProduction = argv.mode === 'production';
     
+    // Playable SDK required globals
+    const adNetwork = env?.network || 'none';
+    const adProtocol = env?.protocol || 'none';
+    
     return {
-        entry: './src/main.js',
+        entry: './src/index.js',
         output: {
             path: path.resolve(__dirname, 'dist'),
             filename: 'bundle.[contenthash:8].js',
@@ -30,6 +35,14 @@ module.exports = (env, argv) => {
             ]
         },
         plugins: [
+            // Define Playable SDK globals
+            new webpack.DefinePlugin({
+                AD_NETWORK: JSON.stringify(adNetwork),
+                AD_PROTOCOL: JSON.stringify(adProtocol),
+                GOOGLE_PLAY_URL: JSON.stringify('https://play.google.com/store/apps/details?id=com.example.huntinggame'),
+                APP_STORE_URL: JSON.stringify('https://apps.apple.com/app/id123456789'),
+                BUILD_HASH: JSON.stringify(Date.now().toString(36))
+            }),
             new HtmlWebpackPlugin({
                 template: './src/index.html',
                 minify: isProduction ? {
@@ -65,4 +78,3 @@ module.exports = (env, argv) => {
         devtool: isProduction ? false : 'eval-source-map'
     };
 };
-

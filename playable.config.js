@@ -6,7 +6,7 @@ const path = require('path');
  */
 module.exports = {
     // Entry point
-    entry: path.resolve(__dirname, 'src/main.js'),
+    entry: path.resolve(__dirname, 'src/index.js'),
     
     // HTML template
     template: path.resolve(__dirname, 'src/index.html'),

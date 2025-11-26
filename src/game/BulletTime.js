@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CONFIG } from '@/config';
+import { CONFIG } from '../config';
 
 /**
  * Bullet time effect - slow motion bullet camera
