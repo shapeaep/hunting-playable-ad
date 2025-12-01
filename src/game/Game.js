@@ -37,10 +37,14 @@ export class Game {
             startY: 0,
             deltaX: 0,
             deltaY: 0,
+            // Store initial camera rotation when joystick starts
+            startRotationX: 0,
+            startRotationY: 0,
             stick: null,
             zone: null,
             releaseHint: null,
-            maxRadius: 50
+            maxRadius: 50,
+            firstShotDone: false
         };
         
         this.init();
@@ -313,10 +317,12 @@ export class Game {
             // Zoom in immediately when joystick pressed
             this.state.targetFov = CONFIG.zoomedFov;
             
-            // Hide joystick elements, show release hint
+            // Hide joystick elements, show release hint (only before first shot)
             stick.classList.remove('tutorial');
             zone.classList.add('active');
-            releaseHint?.classList.add('visible');
+            if (!this.joystick.firstShotDone) {
+                releaseHint?.classList.add('visible');
+            }
             
             // Use touch position as start point - full screen is control area
             const pos = getPos(e);
@@ -325,6 +331,9 @@ export class Game {
             this.joystick.startY = pos.y;
             this.joystick.deltaX = 0;
             this.joystick.deltaY = 0;
+            // Save current camera rotation as starting point
+            this.joystick.startRotationX = this.state.targetRotation.x;
+            this.joystick.startRotationY = this.state.targetRotation.y;
         };
         
         const onMove = (e) => {
@@ -343,15 +352,23 @@ export class Game {
             // Shoot when joystick is released
             if (this.joystick.active) {
                 this.shoot();
+                // Mark first shot done - hide tutorial elements permanently
+                if (!this.joystick.firstShotDone) {
+                    this.joystick.firstShotDone = true;
+                    releaseHint?.classList.remove('visible');
+                }
             }
             
             // Zoom out when released
             this.state.targetFov = CONFIG.baseFov;
             
-            // Hide release hint, show joystick with tutorial animation
+            // Hide UI elements
             zone.classList.remove('active');
-            releaseHint?.classList.remove('visible');
-            stick.classList.add('tutorial');
+            
+            // Show tutorial animation only before first shot
+            if (!this.joystick.firstShotDone) {
+                stick.classList.add('tutorial');
+            }
             
             this.joystick.active = false;
             this.joystick.deltaX = 0;
@@ -713,11 +730,15 @@ export class Game {
     // ============ CAMERA UPDATE ============
     
     updateCamera(delta) {
-        // Joystick input - direct control without delta accumulation
+        // Joystick input - DIRECT 1:1 control, no accumulation
         if (this.joystick.active) {
-            const speed = CONFIG.joystickSpeed || 2;
-            this.state.targetRotation.y -= this.joystick.deltaX * speed * delta;
-            this.state.targetRotation.x -= this.joystick.deltaY * speed * delta;
+            const sensitivity = CONFIG.joystickSpeed || 0.15;
+            
+            // Direct mapping: finger position -> camera rotation offset from start
+            this.state.targetRotation.y = this.joystick.startRotationY - this.joystick.deltaX * sensitivity;
+            this.state.targetRotation.x = this.joystick.startRotationX - this.joystick.deltaY * sensitivity;
+            
+            // Clamp
             this.state.targetRotation.x = THREE.MathUtils.clamp(
                 this.state.targetRotation.x,
                 CONFIG.pitchLimit.min,
@@ -736,7 +757,7 @@ export class Game {
         // Apply camera shake
         const shake = this.updateCameraShake(delta);
         
-        // Apply rotation directly to camera - no intermediate state
+        // Apply rotation directly to camera - instant, no smoothing
         this.camera.rotation.order = 'YXZ';
         this.camera.rotation.y = this.state.targetRotation.y + shake.y;
         this.camera.rotation.x = this.state.targetRotation.x + shake.x;

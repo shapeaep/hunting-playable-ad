@@ -9,7 +9,7 @@ export const CONFIG = {
     autoRedirectDelay: 2000,  // Auto redirect after CTA shows (ms), 0 = disabled
     
     // Random seed (change for different world generation)
-    worldSeed: 1555,
+    worldSeed: 5542,
     
     // Camera
     towerHeight: 12,
@@ -41,7 +41,7 @@ export const CONFIG = {
     
     // World generation
     groundSize: 300,
-    treeCount: 200,
+    treeCount: 175,
     grassCount: 15000,
     grassTallCount: 700,
     flowerCount: 700,
