@@ -13,14 +13,17 @@ export class Game {
     constructor(canvas) {
         this.canvas = canvas;
         
+        // Initial camera rotation (used to reset after shot)
+        this.initialRotation = { x: -0.2, y: 0 };
+        
         // State
         this.state = {
             score: 0,
             kills: 0,
             currentFov: CONFIG.baseFov,
             targetFov: CONFIG.baseFov,
-            targetRotation: { x: -0.2, y: 0 },
-            currentRotation: { x: -0.2, y: 0 },
+            targetRotation: { x: this.initialRotation.x, y: this.initialRotation.y },
+            currentRotation: { x: this.initialRotation.x, y: this.initialRotation.y },
             canShoot: true,
             targetedAnimal: null,
             timeScale: 1,
@@ -361,6 +364,10 @@ export class Game {
             
             // Zoom out when released
             this.state.targetFov = CONFIG.baseFov;
+            
+            // Reset camera to initial position after shot
+            this.state.targetRotation.x = this.initialRotation.x;
+            this.state.targetRotation.y = this.initialRotation.y;
             
             // Hide UI elements
             zone.classList.remove('active');
