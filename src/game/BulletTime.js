@@ -21,11 +21,13 @@ export class BulletTime {
         
         this.active = false;
         this.bullet = null;
+        this.bulletInner = null; // Inner model for spin rotation
         this.targetPos = null;
         this.targetAnimal = null;
         this.startTime = 0;
         this.cameraAngle = 0;
         this.progress = 0;
+        this.bulletSpin = 0; // Bullet spin angle
         
         // Camera shake
         this.shakeIntensity = 0;
@@ -74,11 +76,16 @@ export class BulletTime {
     createBullet() {
         const bullet = new THREE.Group();
         
+        // Inner group for spin rotation (rotates around Z axis)
+        const inner = new THREE.Group();
+        bullet.add(inner);
+        this.bulletInner = inner;
+        
         // Use loaded GLB model
         if (this.bulletModel) {
             console.log('Using GLB bullet model');
             const model = this.bulletModel.clone();
-            bullet.add(model);
+            inner.add(model);
         } else {
             console.log('Using fallback bullet (model not loaded yet)');
             // Fallback: simple bullet shape if model not loaded
@@ -86,14 +93,14 @@ export class BulletTime {
             const bodyMat = new THREE.MeshStandardMaterial({ color: 0xb87333, metalness: 0.8 });
             const body = new THREE.Mesh(bodyGeo, bodyMat);
             body.rotation.x = Math.PI / 2;
-            bullet.add(body);
+            inner.add(body);
             
             // Tip
             const tipGeo = new THREE.ConeGeometry(0.05, 0.15, 12);
             const tip = new THREE.Mesh(tipGeo, bodyMat);
             tip.rotation.x = -Math.PI / 2;
             tip.position.z = 0.22;
-            bullet.add(tip);
+            inner.add(tip);
         }
         
         return bullet;
@@ -114,6 +121,7 @@ export class BulletTime {
         this.startTime = Date.now();
         this.cameraAngle = 0;
         this.progress = 0;
+        this.bulletSpin = 0;
         
         // UI
         document.getElementById('bullet-time')?.classList.add('active');
@@ -168,6 +176,12 @@ export class BulletTime {
         const startPos = this.mainCamera.position.clone();
         this.bullet.position.lerpVectors(startPos, this.targetPos, bulletProgress);
         this.bullet.lookAt(this.targetPos);
+        
+        // Spin bullet around its flight axis (Z)
+        this.bulletSpin += delta * 25; // Fast spin
+        if (this.bulletInner) {
+            this.bulletInner.rotation.z = this.bulletSpin;
+        }
         
         const bulletPos = this.bullet.position.clone();
         
