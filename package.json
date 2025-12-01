@@ -8,7 +8,6 @@
     "build:analyze": "webpack --mode production --analyze",
     "serve": "node server.js",
     "start": "node server.js",
-    
     "playable": "playable-scripts build",
     "playable:google": "playable-scripts build --network google",
     "playable:facebook": "playable-scripts build --network facebook",
@@ -21,7 +20,9 @@
     "playable:all": "playable-scripts build --all"
   },
   "devDependencies": {
+    "copy-webpack-plugin": "^13.0.1",
     "css-loader": "^6.8.1",
+    "gltf-pipeline": "^4.3.0",
     "html-webpack-plugin": "^5.5.3",
     "mini-css-extract-plugin": "^2.7.6",
     "style-loader": "^3.3.3",
@@ -34,6 +35,7 @@
   "dependencies": {
     "@smoud/playable-scripts": "^1.0.40",
     "@smoud/playable-sdk": "^1.0.23",
+    "draco3dgltf": "^1.5.7",
     "three": "^0.160.0"
   }
 }

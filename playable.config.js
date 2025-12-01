@@ -26,6 +26,18 @@ module.exports = {
             use: ['style-loader', 'css-loader']
         });
         
+        // Add image loader (inline as base64)
+        config.module.rules.push({
+            test: /\.(jpg|jpeg|png|gif|webp|svg)$/i,
+            type: 'asset/inline'
+        });
+        
+        // Add GLB/GLTF loader (inline as base64)
+        config.module.rules.push({
+            test: /\.(glb|gltf)$/i,
+            type: 'asset/inline'
+        });
+        
         // Add path alias
         config.resolve = config.resolve || {};
         config.resolve.alias = {

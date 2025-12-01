@@ -3,40 +3,71 @@
  */
 export const CONFIG = {
     // Game settings
-    animalCount: 6,
-    showCtaAfterKills: 2,
+    animalCount: 8,
+    showCtaAfterKills: 5,
     ctaUrl: 'https://play.google.com/store',
+    autoRedirectDelay: 2000,  // Auto redirect after CTA shows (ms), 0 = disabled
+    
+    // Random seed (change for different world generation)
+    worldSeed: 1555,
     
     // Camera
     towerHeight: 12,
     baseFov: 45,
-    zoomedFov: 15,
-    zoomSpeed: 0.08,
-    sensitivity: 0.004,
+    zoomedFov: 12,
+    zoomSpeed: 0.1,
+    sensitivity: 0.001,
     pitchLimit: { min: -0.6, max: 0.15 },
-    cameraSmoothness: 0.06,  // Lower = more delay/smoothing (was 0.12)
-    joystickSpeed: 2.0,      // Joystick rotation speed
+    yawLimit: { min: -0.3, max: 0.3 },  // ±80° = 160° total horizontal rotation
+    cameraSmoothness: 1,  // Lower = more delay/smoothing (was 0.12)
+    joystickSpeed: 0.13,      // Joystick rotation speed
+    
+    // Camera shake on shoot
+    cameraShake: {
+        intensity: 0.015,      // Shake strength
+        duration: 300,         // Shake duration in ms
+        frequency: 25          // Shake frequency
+    },
     
     // Auto-aim (screen-space based)
     autoAim: {
-        enabled: true,
-        strength: 0.0004,     // Pull strength
-        screenRadius: 250,    // Pixel radius from center to detect targets
-        deadzone: 35          // Pixels - stop correcting when this close
+        enabled: false,
+        strength: 0.0005,         // Base pull strength (when far from target)
+        precisionStrength: 0.0006, // Precision strength (when close to target)
+        screenRadius: 250,        // Pixel radius from center to detect targets
+        deadzone: 50,             // Pixels - stop correcting when this close
+        maxStep: 0.0008           // Max correction per frame (prevents jumps)
     },
     
     // World generation
     groundSize: 300,
-    treeCount: 120,
-    grassCount: 500,
-    groundPatchCount: 50,
+    treeCount: 200,
+    grassCount: 15000,
+    grassTallCount: 700,
+    flowerCount: 700,
+    rockCount: 250,
+    groundPatchCount: 11,
+    cloudCount: 155,
+    terrainDistortion: 3,    // Height variation strength (0 = flat, 2 = hilly)
+    
+    // Mountains
+    mountains: {
+        enabled: true,
+        count: 8,
+        distance: 180,
+        minHeight: 35,
+        maxHeight: 65,
+        minRadius: 35,
+        maxRadius: 65
+    },
     
     // Animals
     animalSpeed: { min: 1.5, max: 4 },
     spawnRadius: { min: 25, max: 70 },
     animalTypes: {
-        deer: { chance: 0.65, points: 150, boundingRadius: 1.2 },
-        boar: { chance: 0.35, points: 100, boundingRadius: 0.9 }
+        deer: { chance: 0.45, points: 200, boundingRadius: 1.2 },    // Level 3 - most expensive
+        boar: { chance: 0.30, points: 150, boundingRadius: 0.9 },    // Level 2 - medium
+        rabbit: { chance: 0.25, points: 100, boundingRadius: 0.5 }   // Level 1 - cheapest
     },
     
     // Bullet time
@@ -54,7 +85,25 @@ export const CONFIG = {
         ground: {
             main: 0x4a7c4e,
             dark: 0x3d6b41,
-            grass: 0x5a9a5e
+            light: 0x5d8f5a,
+            grass: 0x5a9a5e,
+            grassDark: 0x3d7a3d,
+            grassLight: 0x7ab87a
+        },
+        
+        flowers: {
+            red: 0xe74c3c,
+            yellow: 0xf1c40f,
+            white: 0xffffff,
+            purple: 0x9b59b6,
+            pink: 0xff69b4,
+            orange: 0xff8c00
+        },
+        
+        mountain: {
+            base: 0x5a6a7a,
+            mid: 0x7a8a9a,
+            snow: 0xe8eef5
         },
         
         tree: {
@@ -64,7 +113,8 @@ export const CONFIG = {
         
         animals: {
             deer: { main: 0x9c6b4a, light: 0xc49a6c, antler: 0x8b7355 },
-            boar: { main: 0x5c4033, dark: 0x3d2a22, snout: 0x7a5a4a }
+            boar: { main: 0x5c4033, dark: 0x3d2a22, snout: 0x7a5a4a },
+            rabbit: { main: 0xd4c4b0, light: 0xf5f0e8, ear: 0xffcccc }
         },
         
         bullet: 0xffcc00
@@ -76,6 +126,13 @@ export const CONFIG = {
     
     // UI
     shootCooldown: 500,
-    respawnDelay: 2000
+    respawnDelay: 2000,
+    
+    // Audio
+    audio: {
+        enabled: true,
+        ambientVolume: 0.3,
+        sfxVolume: 0.7
+    }
 };
 

@@ -1,6 +1,7 @@
 import './styles/main.css';
 import sdk from '@smoud/playable-sdk';
 import { Game } from './game/Game';
+import logoSrc from './assets/logo.jpg';
 
 /**
  * Entry point with Playable SDK integration
@@ -8,6 +9,46 @@ import { Game } from './game/Game';
  */
 
 let game = null;
+
+// Setup loading screen
+function setupLoadingScreen() {
+    const logoImg = document.getElementById('loading-logo');
+    console.log('[Loading] Logo element:', logoImg, 'Logo src:', logoSrc);
+    if (logoImg && logoSrc) {
+        logoImg.src = logoSrc;
+    }
+}
+
+// Update loading progress
+function updateLoadingProgress(progress) {
+    const bar = document.getElementById('loading-bar');
+    const text = document.getElementById('loading-text');
+    
+    if (bar) bar.style.width = `${progress}%`;
+    if (text) text.textContent = `Loading... ${Math.round(progress)}%`;
+}
+
+// Hide loading screen
+function hideLoadingScreen() {
+    const screen = document.getElementById('loading-screen');
+    if (screen) {
+        screen.classList.add('hidden');
+        setTimeout(() => {
+            screen.style.display = 'none';
+        }, 500);
+    }
+}
+
+// Make progress updater globally available
+window.updateLoadingProgress = updateLoadingProgress;
+window.hideLoadingScreen = hideLoadingScreen;
+
+// Initialize loading screen when DOM ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupLoadingScreen);
+} else {
+    setupLoadingScreen();
+}
 
 // Initialize SDK
 sdk.init((width, height) => {

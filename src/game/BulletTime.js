@@ -1,5 +1,8 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { CONFIG } from '../config';
+import bulletModelSrc from '../assets/bullet.glb';
 
 /**
  * Bullet time effect - slow motion bullet camera
@@ -24,36 +27,74 @@ export class BulletTime {
         this.cameraAngle = 0;
         this.progress = 0;
         
-        this.bulletMaterial = new THREE.MeshBasicMaterial({ color: CONFIG.colors.bullet });
+        // Camera shake
+        this.shakeIntensity = 0;
+        this.shakeTime = 0;
+        
+        // Load bullet model
+        this.bulletModel = null;
+        this.loadBulletModel();
+    }
+    
+    loadBulletModel() {
+        const loader = new GLTFLoader();
+        
+        // Setup DRACO decoder
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('node_modules/three/examples/jsm/libs/draco/');
+        loader.setDRACOLoader(dracoLoader);
+        
+        loader.load(bulletModelSrc, (gltf) => {
+            this.bulletModel = gltf.scene;
+            // Scale
+            this.bulletModel.scale.set(10, 10, 10);
+            // Rotate 180° so it flies forward
+            this.bulletModel.rotation.y = Math.PI;
+            
+            // Keep original materials, just enhance metalness
+            this.bulletModel.traverse((child) => {
+                if (child.isMesh) {
+                    // Keep original material but make it more metallic
+                    if (child.material) {
+                        child.material.metalness = 0.3;
+                        child.material.roughness = 0.5;
+                        child.material.needsUpdate = true;
+                    }
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+            
+            console.log('Bullet model loaded:', this.bulletModel);
+        }, undefined, (error) => {
+            console.error('Error loading bullet model:', error);
+        });
     }
     
     createBullet() {
         const bullet = new THREE.Group();
         
-        // Body
-        const bodyGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.15, 8);
-        const body = new THREE.Mesh(bodyGeo, this.bulletMaterial);
-        body.rotation.x = Math.PI / 2;
-        bullet.add(body);
-        
-        // Tip
-        const tipGeo = new THREE.ConeGeometry(0.02, 0.05, 8);
-        const tip = new THREE.Mesh(tipGeo, this.bulletMaterial);
-        tip.rotation.x = -Math.PI / 2;
-        tip.position.z = 0.1;
-        bullet.add(tip);
-        
-        // Trail
-        const trailGeo = new THREE.CylinderGeometry(0.005, 0.015, 0.4, 6);
-        const trailMat = new THREE.MeshBasicMaterial({
-            color: 0xffffcc,
-            transparent: true,
-            opacity: 0.6
-        });
-        const trail = new THREE.Mesh(trailGeo, trailMat);
-        trail.rotation.x = Math.PI / 2;
-        trail.position.z = -0.25;
-        bullet.add(trail);
+        // Use loaded GLB model
+        if (this.bulletModel) {
+            console.log('Using GLB bullet model');
+            const model = this.bulletModel.clone();
+            bullet.add(model);
+        } else {
+            console.log('Using fallback bullet (model not loaded yet)');
+            // Fallback: simple bullet shape if model not loaded
+            const bodyGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 12);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xb87333, metalness: 0.8 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.rotation.x = Math.PI / 2;
+            bullet.add(body);
+            
+            // Tip
+            const tipGeo = new THREE.ConeGeometry(0.05, 0.15, 12);
+            const tip = new THREE.Mesh(tipGeo, bodyMat);
+            tip.rotation.x = -Math.PI / 2;
+            tip.position.z = 0.22;
+            bullet.add(tip);
+        }
         
         return bullet;
     }
@@ -77,34 +118,73 @@ export class BulletTime {
         // UI
         document.getElementById('bullet-time')?.classList.add('active');
         document.getElementById('slowmo-text')?.classList.add('visible');
-        document.getElementById('hint').style.display = 'none';
+        
+        // Trigger initial camera shake
+        this.triggerShake(1.0);
         
         return CONFIG.bulletTimeSpeed; // Return time scale
+    }
+    
+    triggerShake(intensityMultiplier = 1.0) {
+        const shake = CONFIG.cameraShake || { intensity: 0.015, duration: 300 };
+        this.shakeIntensity = shake.intensity * intensityMultiplier;
+        this.shakeTime = shake.duration;
+    }
+    
+    getShakeOffset() {
+        if (this.shakeTime <= 0) return { x: 0, y: 0, z: 0 };
+        
+        const shake = CONFIG.cameraShake || { frequency: 25, duration: 300 };
+        
+        // Decay intensity over time
+        const progress = Math.max(0, this.shakeTime / shake.duration);
+        const intensity = this.shakeIntensity * progress;
+        
+        // Strong shake for bullet cam (needs to be visible at distance)
+        const bulletCamMultiplier = 20;
+        const time = Date.now() * shake.frequency * 0.001;
+        return {
+            x: Math.sin(time * 13.7) * intensity * bulletCamMultiplier,
+            y: Math.cos(time * 17.3) * intensity * bulletCamMultiplier,
+            z: Math.sin(time * 11.1) * intensity * bulletCamMultiplier * 0.5
+        };
     }
     
     update(delta) {
         if (!this.active) return false;
         
+        // Update shake timer
+        if (this.shakeTime > 0) {
+            this.shakeTime -= delta * 1000;
+        }
+        
         const elapsed = Date.now() - this.startTime;
         this.progress = Math.min(elapsed / CONFIG.bulletTimeDuration, 1);
-        const eased = this.easeInOutCubic(this.progress);
         
-        // Move bullet
+        // Linear movement for constant speed bullet
+        const bulletProgress = this.progress;
+        
+        // Move bullet at constant speed
         const startPos = this.mainCamera.position.clone();
-        this.bullet.position.lerpVectors(startPos, this.targetPos, eased);
+        this.bullet.position.lerpVectors(startPos, this.targetPos, bulletProgress);
         this.bullet.lookAt(this.targetPos);
         
-        // Orbit camera around bullet
-        this.cameraAngle += delta * 1.5;
         const bulletPos = this.bullet.position.clone();
         
-        const camDist = 3 + (1 - this.progress) * 5;
-        const camHeight = 1 + Math.sin(this.progress * Math.PI) * 2;
+        // Orbit camera around bullet - slower rotation (half speed)
+        this.cameraAngle += delta * 1.0;
+        
+        // Camera distance stays relatively constant
+        const camDist = 4;
+        const camHeight = 1.5 + Math.sin(this.cameraAngle * 0.5) * 0.5;
+        
+        // Apply camera shake
+        const shake = this.getShakeOffset();
         
         this.camera.position.set(
-            bulletPos.x + Math.cos(this.cameraAngle) * camDist,
-            bulletPos.y + camHeight,
-            bulletPos.z + Math.sin(this.cameraAngle) * camDist
+            bulletPos.x + Math.cos(this.cameraAngle) * camDist + shake.x,
+            bulletPos.y + camHeight + shake.y,
+            bulletPos.z + Math.sin(this.cameraAngle) * camDist + shake.z
         );
         this.camera.lookAt(bulletPos);
         
@@ -118,6 +198,7 @@ export class BulletTime {
             this.scene.remove(this.bullet);
             this.bullet = null;
         }
+        
         
         this.active = false;
         this.targetAnimal = null;

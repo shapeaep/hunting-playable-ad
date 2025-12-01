@@ -5,10 +5,227 @@ import { CONFIG } from '../config';
  * Animal factory and management
  */
 export class AnimalManager {
-    constructor(scene) {
+    constructor(scene, world = null) {
         this.scene = scene;
+        this.world = world;
         this.animals = [];
         this.materials = this.createMaterials();
+        this.labelTextures = new Map(); // Cache for label textures
+    }
+    
+    /**
+     * Create 3D label for animal with name and price
+     */
+    createLabel(type, points) {
+        const names = { deer: 'DEER', boar: 'BOAR', rabbit: 'HARE' };
+        const name = names[type] || type.toUpperCase();
+        
+        // Level and color scheme per animal type
+        // Deer: Level 3, Gold | Boar: Level 2, Purple | Rabbit: Level 1, Gray
+        const levelConfig = {
+            deer: { level: 3, circleColor: '#ffd700', nameGradient: ['#ffd700', '#c5a000'], priceGradient: ['#b8860b', '#8b6914'], textColor: '#5a4a00', circleTextColor: '#5a4a00' },
+            boar: { level: 2, circleColor: '#9b59b6', nameGradient: ['#9b59b6', '#7d3c98'], priceGradient: ['#6c3483', '#512e5f'], textColor: '#ffffff', circleTextColor: '#ffffff' },
+            rabbit: { level: 1, circleColor: '#e0e0e0', nameGradient: ['#f5f5f5', '#d0d0d0'], priceGradient: ['#4a4a4a', '#2a2a2a'], textColor: '#333333', circleTextColor: '#333333' }
+        };
+        const config = levelConfig[type] || levelConfig.rabbit;
+        
+        // Create canvas for label texture
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        
+        // Clear
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // === Level circle (left side) ===
+        const circleX = 90;
+        const circleY = 128;
+        const circleRadius = 55;
+        
+        // Circle shadow
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        ctx.shadowBlur = 15;
+        ctx.shadowOffsetY = 8;
+        
+        // Circle with color based on type
+        ctx.beginPath();
+        ctx.arc(circleX, circleY, circleRadius, 0, Math.PI * 2);
+        ctx.fillStyle = config.circleColor;
+        ctx.fill();
+        ctx.restore();
+        
+        // "LEVEL" text
+        ctx.fillStyle = config.circleTextColor;
+        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('LEVEL', circleX, circleY - 18);
+        
+        // Level number
+        ctx.fillStyle = config.circleTextColor;
+        ctx.font = 'bold 42px Arial, sans-serif';
+        ctx.fillText(config.level.toString(), circleX, circleY + 15);
+        
+        // === Name plate (top right) ===
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetY = 5;
+        
+        // Skewed rectangle for name
+        ctx.beginPath();
+        const nameX = 160;
+        const nameY = 70;
+        const nameW = 280;
+        const nameH = 55;
+        const skew = 15;
+        ctx.moveTo(nameX + skew, nameY);
+        ctx.lineTo(nameX + nameW, nameY);
+        ctx.lineTo(nameX + nameW - skew, nameY + nameH);
+        ctx.lineTo(nameX, nameY + nameH);
+        ctx.closePath();
+        
+        // Gradient for name plate (color based on type)
+        const nameGrad = ctx.createLinearGradient(nameX, nameY, nameX, nameY + nameH);
+        nameGrad.addColorStop(0, config.nameGradient[0]);
+        nameGrad.addColorStop(1, config.nameGradient[1]);
+        ctx.fillStyle = nameGrad;
+        ctx.fill();
+        ctx.restore();
+        
+        // Name text
+        ctx.fillStyle = config.textColor;
+        ctx.font = 'bold 32px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(name, nameX + nameW / 2, nameY + nameH / 2 + 4);
+        
+        // === Price plate (bottom right) ===
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetY = 5;
+        
+        // Skewed rectangle for price
+        ctx.beginPath();
+        const priceX = 175;
+        const priceY = 135;
+        const priceW = 265;
+        const priceH = 55;
+        ctx.moveTo(priceX + skew, priceY);
+        ctx.lineTo(priceX + priceW, priceY);
+        ctx.lineTo(priceX + priceW - skew, priceY + priceH);
+        ctx.lineTo(priceX, priceY + priceH);
+        ctx.closePath();
+        
+        // Gradient for price plate (color based on type)
+        const priceGrad = ctx.createLinearGradient(priceX, priceY, priceX, priceY + priceH);
+        priceGrad.addColorStop(0, config.priceGradient[0]);
+        priceGrad.addColorStop(1, config.priceGradient[1]);
+        ctx.fillStyle = priceGrad;
+        ctx.fill();
+        ctx.restore();
+        
+        // Price text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 34px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('$' + points, priceX + priceW / 2, priceY + priceH / 2 + 4);
+        
+        // Create texture from canvas
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        
+        // Create sprite material (unlit - no lighting/fog affects it)
+        const material = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            depthTest: false,
+            depthWrite: false,
+            fog: false,           // Disable fog
+            toneMapped: false     // Disable tone mapping
+        });
+        
+        // Create sprite
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(4, 2, 1); // Adjust size
+        sprite.visible = false; // Hidden by default
+        sprite.renderOrder = 999; // Render on top
+        
+        return sprite;
+    }
+    
+    /**
+     * Show label for specific animal
+     */
+    showLabel(animal) {
+        if (animal.userData.label) {
+            animal.userData.label.visible = true;
+        }
+    }
+    
+    /**
+     * Hide label for specific animal
+     */
+    hideLabel(animal) {
+        if (animal.userData.label) {
+            animal.userData.label.visible = false;
+        }
+    }
+    
+    /**
+     * Hide all labels
+     */
+    hideAllLabels() {
+        this.animals.forEach(animal => {
+            if (animal.userData.label) {
+                animal.userData.label.visible = false;
+            }
+        });
+    }
+    
+    /**
+     * Update labels to follow animals
+     */
+    updateLabels() {
+        this.animals.forEach(animal => {
+            if (!animal.userData.alive || !animal.userData.label) return;
+            
+            const label = animal.userData.label;
+            // Position label above animal's head
+            const heightOffset = animal.userData.type === 'rabbit' ? 1.5 : 
+                                 animal.userData.type === 'boar' ? 2.0 : 2.8;
+            label.position.copy(animal.position);
+            label.position.y += heightOffset;
+        });
+    }
+    
+    /**
+     * Get terrain height at position, fallback to 0 if no world
+     */
+    getHeight(x, z) {
+        return this.world ? this.world.getTerrainHeight(x, z) : 0;
+    }
+    
+    /**
+     * Check if position is within camera's visible area
+     */
+    isInCameraArea(x, z) {
+        const yawLimit = CONFIG.yawLimit || { min: -1.4, max: 1.4 };
+        // Calculate angle from camera (which looks along -Z initially)
+        const angle = Math.atan2(x, -z);
+        return angle >= yawLimit.min && angle <= yawLimit.max;
+    }
+    
+    /**
+     * Get random angle within camera's yaw limits
+     */
+    getSpawnAngle() {
+        const yawLimit = CONFIG.yawLimit || { min: -1.4, max: 1.4 };
+        // Random angle within yaw limits
+        // Camera yaw directly maps to world angle for spawning
+        return yawLimit.min + Math.random() * (yawLimit.max - yawLimit.min);
     }
     
     createMaterials() {
@@ -20,8 +237,13 @@ export class AnimalManager {
             boar: new THREE.MeshLambertMaterial({ color: colors.animals.boar.main }),
             boarDark: new THREE.MeshLambertMaterial({ color: colors.animals.boar.dark }),
             snout: new THREE.MeshLambertMaterial({ color: colors.animals.boar.snout }),
+            rabbit: new THREE.MeshLambertMaterial({ color: colors.animals.rabbit.main }),
+            rabbitLight: new THREE.MeshLambertMaterial({ color: colors.animals.rabbit.light }),
+            rabbitEar: new THREE.MeshLambertMaterial({ color: colors.animals.rabbit.ear }),
             white: new THREE.MeshLambertMaterial({ color: 0xffffff }),
-            tusk: new THREE.MeshLambertMaterial({ color: 0xfffff0 })
+            tusk: new THREE.MeshLambertMaterial({ color: 0xfffff0 }),
+            black: new THREE.MeshLambertMaterial({ color: 0x222222 }),
+            pink: new THREE.MeshLambertMaterial({ color: 0xffaaaa })
         };
     }
     
@@ -123,6 +345,61 @@ export class AnimalManager {
         return boar;
     }
     
+    createRabbit() {
+        const rabbit = new THREE.Group();
+        const m = this.materials;
+        
+        // Body (oval)
+        const body = this.mesh(new THREE.SphereGeometry(0.35, 8, 8), m.rabbit, [0, 0.4, 0], true);
+        body.scale.set(1.3, 0.9, 1);
+        rabbit.add(body);
+        
+        // Head
+        rabbit.add(this.mesh(new THREE.SphereGeometry(0.22, 8, 8), m.rabbitLight, [0.4, 0.55, 0]));
+        
+        // Snout
+        rabbit.add(this.mesh(new THREE.SphereGeometry(0.08, 6, 6), m.rabbitLight, [0.6, 0.5, 0]));
+        
+        // Nose
+        rabbit.add(this.mesh(new THREE.SphereGeometry(0.03, 4, 4), m.pink, [0.68, 0.52, 0]));
+        
+        // Eyes
+        [-0.08, 0.08].forEach(z => {
+            rabbit.add(this.mesh(new THREE.SphereGeometry(0.04, 6, 6), m.black, [0.52, 0.62, z]));
+        });
+        
+        // Long ears
+        const earGeo = new THREE.CapsuleGeometry(0.05, 0.35, 4, 8);
+        [-0.08, 0.08].forEach(z => {
+            const ear = this.mesh(earGeo, m.rabbitEar, [0.25, 0.95, z]);
+            ear.rotation.z = z > 0 ? 0.2 : -0.2;
+            ear.rotation.x = z > 0 ? 0.15 : -0.15;
+            rabbit.add(ear);
+        });
+        
+        // Front legs
+        const frontLegGeo = new THREE.CylinderGeometry(0.04, 0.035, 0.25, 4);
+        [-0.12, 0.12].forEach(z => {
+            const leg = this.mesh(frontLegGeo, m.rabbit, [0.25, 0.12, z]);
+            leg.userData = { isLeg: true, legIndex: z > 0 ? 1 : 0 };
+            rabbit.add(leg);
+        });
+        
+        // Back legs (bigger, bent)
+        const backLegGeo = new THREE.CapsuleGeometry(0.06, 0.2, 4, 8);
+        [-0.15, 0.15].forEach((z, i) => {
+            const leg = this.mesh(backLegGeo, m.rabbit, [-0.25, 0.18, z]);
+            leg.rotation.z = 0.4;
+            leg.userData = { isLeg: true, legIndex: i + 2 };
+            rabbit.add(leg);
+        });
+        
+        // Fluffy tail
+        rabbit.add(this.mesh(new THREE.SphereGeometry(0.1, 6, 6), m.white, [-0.45, 0.4, 0]));
+        
+        return rabbit;
+    }
+    
     mesh(geometry, material, position = [0, 0, 0], castShadow = false) {
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.set(...position);
@@ -140,29 +417,61 @@ export class AnimalManager {
     }
     
     spawn() {
-        const isDeer = Math.random() < CONFIG.animalTypes.deer.chance;
-        const animal = isDeer ? this.createDeer() : this.createBoar();
-        const type = isDeer ? 'deer' : 'boar';
-        const typeConfig = CONFIG.animalTypes[type];
+        // Determine animal type based on chances
+        const rand = Math.random();
+        const types = CONFIG.animalTypes;
+        let type, animal;
         
-        const angle = Math.random() * Math.PI * 2;
+        if (rand < types.deer.chance) {
+            type = 'deer';
+            animal = this.createDeer();
+        } else if (rand < types.deer.chance + types.boar.chance) {
+            type = 'boar';
+            animal = this.createBoar();
+        } else {
+            type = 'rabbit';
+            animal = this.createRabbit();
+        }
+        
+        const typeConfig = types[type];
+        
+        // Spawn within camera's visible area
+        const angle = this.getSpawnAngle();
         const { min, max } = CONFIG.spawnRadius;
         const radius = min + Math.random() * (max - min);
         
-        animal.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+        // Camera looks at -Z, so use sin/cos directly with yaw angle
+        const x = Math.sin(angle) * radius;
+        const z = -Math.cos(angle) * radius;
+        const y = this.getHeight(x, z);
+        animal.position.set(x, y, z);
+        
+        // Random direction (any direction, not limited to camera area)
+        const dirAngle = Math.random() * Math.PI * 2;
+        const dirX = Math.sin(dirAngle);
+        const dirZ = Math.cos(dirAngle);
         
         animal.userData = {
             type,
             points: typeConfig.points,
             boundingRadius: typeConfig.boundingRadius,
-            speed: CONFIG.animalSpeed.min + Math.random() * (CONFIG.animalSpeed.max - CONFIG.animalSpeed.min),
-            direction: new THREE.Vector3((Math.random() - 0.5) * 2, 0, (Math.random() - 0.5) * 2).normalize(),
+            speed: type === 'rabbit' 
+                ? CONFIG.animalSpeed.min * 1.5 + Math.random() * CONFIG.animalSpeed.max 
+                : CONFIG.animalSpeed.min + Math.random() * (CONFIG.animalSpeed.max - CONFIG.animalSpeed.min),
+            direction: new THREE.Vector3(dirX, 0, dirZ).normalize(),
             changeTimer: 3 + Math.random() * 4,
             walkCycle: Math.random() * Math.PI * 2,
             alive: true
         };
         
-        animal.rotation.y = Math.atan2(animal.userData.direction.x, animal.userData.direction.z);
+        // Create 3D label for this animal
+        const label = this.createLabel(type, typeConfig.points);
+        animal.userData.label = label;
+        this.scene.add(label);
+        
+        // Animal model faces +X at rotation.y=0
+        // For direction (dx, dz), angle from +X is atan2(dz, dx), but we need negative for correct orientation
+        animal.rotation.y = -Math.atan2(animal.userData.direction.z, animal.userData.direction.x);
         
         this.scene.add(animal);
         this.animals.push(animal);
@@ -171,47 +480,94 @@ export class AnimalManager {
     
     update(delta, timeScale) {
         const realDelta = delta * timeScale;
+        const yawLimit = CONFIG.yawLimit || { min: -1.4, max: 1.4 };
         
         this.animals.forEach(animal => {
             if (!animal.userData.alive) return;
             
             const data = animal.userData;
             
-            // Walk animation
-            data.walkCycle += realDelta * data.speed * 4;
+            // Walk animation (rabbits hop more)
+            const animSpeed = data.type === 'rabbit' ? 8 : 4;
+            data.walkCycle += realDelta * data.speed * animSpeed;
             animal.children.forEach(child => {
                 if (child.userData.isLeg) {
                     const offset = child.userData.legIndex < 2 ? 0 : Math.PI;
                     const side = child.userData.legIndex % 2 === 0 ? 1 : -1;
-                    child.rotation.x = Math.sin(data.walkCycle + offset) * 0.4 * side;
+                    const amplitude = data.type === 'rabbit' ? 0.6 : 0.4;
+                    // Rotate around Z for forward/backward leg swing (animal faces +X)
+                    child.rotation.z = Math.sin(data.walkCycle + offset) * amplitude * side;
                 }
             });
             
             // Movement
             animal.position.addScaledVector(data.direction, data.speed * realDelta);
+            
+            // Update Y position to follow terrain
+            animal.position.y = this.getHeight(animal.position.x, animal.position.z);
+            
+            // Animal model faces +X at rotation.y=0 (frame-rate independent)
+            const targetRotation = -Math.atan2(data.direction.z, data.direction.x);
+            const rotSmoothing = 1 - Math.pow(0.9, realDelta * 60);
             animal.rotation.y = THREE.MathUtils.lerp(
                 animal.rotation.y,
-                Math.atan2(data.direction.x, data.direction.z),
-                0.1
+                targetRotation,
+                rotSmoothing
             );
             
-            // Direction change
+            // Direction change - pick random direction for natural wandering
             data.changeTimer -= realDelta;
             if (data.changeTimer <= 0) {
-                data.direction.set((Math.random() - 0.5) * 2, 0, (Math.random() - 0.5) * 2).normalize();
-                data.changeTimer = 2 + Math.random() * 5;
-                data.speed = CONFIG.animalSpeed.min + Math.random() * (CONFIG.animalSpeed.max - CONFIG.animalSpeed.min);
+                // New random direction (full 360°)
+                const newAngle = Math.random() * Math.PI * 2;
+                data.direction.set(Math.sin(newAngle), 0, Math.cos(newAngle)).normalize();
+                data.changeTimer = data.type === 'rabbit' ? 2 + Math.random() * 3 : 3 + Math.random() * 5;
+                data.speed = data.type === 'rabbit'
+                    ? CONFIG.animalSpeed.min * 1.5 + Math.random() * CONFIG.animalSpeed.max
+                    : CONFIG.animalSpeed.min + Math.random() * (CONFIG.animalSpeed.max - CONFIG.animalSpeed.min);
             }
             
-            // Boundary check
+            // Boundary check - keep animals in playable area
             const dist = Math.hypot(animal.position.x, animal.position.z);
-            if (dist > CONFIG.spawnRadius.max + 15 || dist < 12) {
-                data.direction.set(
-                    dist < 12 ? animal.position.x : -animal.position.x,
-                    0,
-                    dist < 12 ? animal.position.z : -animal.position.z
-                ).normalize();
-                data.changeTimer = dist < 12 ? 2 : 3;
+            const currentAngle = Math.atan2(animal.position.x, -animal.position.z);
+            
+            // Soft boundary - gradually steer back when approaching edges
+            const margin = 0.2; // radians of margin before hard turn
+            let needsSteer = false;
+            let steerAngle = 0;
+            
+            // Check if near yaw limit edges
+            if (currentAngle < yawLimit.min + margin) {
+                // Near left edge - steer right
+                steerAngle = yawLimit.min + 0.5;
+                needsSteer = true;
+            } else if (currentAngle > yawLimit.max - margin) {
+                // Near right edge - steer left
+                steerAngle = yawLimit.max - 0.5;
+                needsSteer = true;
+            }
+            
+            // Check if outside camera yaw range completely
+            if (currentAngle < yawLimit.min || currentAngle > yawLimit.max) {
+                // Turn back toward center
+                steerAngle = (yawLimit.min + yawLimit.max) / 2;
+                needsSteer = true;
+            }
+            
+            if (needsSteer) {
+                data.direction.set(Math.sin(steerAngle), 0, -Math.cos(steerAngle)).normalize();
+                data.changeTimer = 1 + Math.random() * 2;
+            }
+            
+            // Check radius bounds
+            if (dist > CONFIG.spawnRadius.max + 5) {
+                // Too far - turn toward center
+                data.direction.set(-animal.position.x, 0, -animal.position.z).normalize();
+                data.changeTimer = 1 + Math.random() * 2;
+            } else if (dist < 20) {
+                // Too close to tower - turn away
+                data.direction.set(animal.position.x, 0, animal.position.z).normalize();
+                data.changeTimer = 1 + Math.random() * 2;
             }
         });
     }
@@ -221,19 +577,38 @@ export class AnimalManager {
     }
     
     remove(animal) {
+        // Remove label if exists
+        if (animal.userData.label) {
+            this.scene.remove(animal.userData.label);
+            if (animal.userData.label.material.map) {
+                animal.userData.label.material.map.dispose();
+            }
+            animal.userData.label.material.dispose();
+        }
         this.scene.remove(animal);
         this.animals = this.animals.filter(a => a !== animal);
     }
     
     animateDeath(animal, onComplete) {
+        // Hide label immediately on death
+        this.hideLabel(animal);
+        
         let t = 0;
+        let lastTime = performance.now();
         const startY = animal.position.y;
         const startRotZ = animal.rotation.z;
+        const duration = 500; // Animation duration in ms
         
         const animate = () => {
-            t += 0.03;
-            animal.rotation.z = startRotZ + t * (Math.PI / 2);
-            animal.position.y = startY - t * 0.3;
+            const now = performance.now();
+            const deltaMs = now - lastTime;
+            lastTime = now;
+            
+            // Frame-rate independent progress
+            t += deltaMs / duration;
+            
+            animal.rotation.z = startRotZ + Math.min(t, 1) * (Math.PI / 2);
+            animal.position.y = startY - Math.min(t, 1) * 0.3;
             
             if (t < 1) {
                 requestAnimationFrame(animate);
@@ -247,4 +622,3 @@ export class AnimalManager {
         animate();
     }
 }
-

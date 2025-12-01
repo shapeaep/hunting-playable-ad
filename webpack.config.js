@@ -31,6 +31,14 @@ module.exports = (env, argv) => {
                         isProduction ? MiniCssExtractPlugin.loader : 'style-loader',
                         'css-loader'
                     ]
+                },
+                {
+                    test: /\.(jpg|jpeg|png|gif|webp)$/i,
+                    type: 'asset/resource'
+                },
+                {
+                    test: /\.(glb|gltf)$/i,
+                    type: 'asset/resource'
                 }
             ]
         },

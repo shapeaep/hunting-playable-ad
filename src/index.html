@@ -6,6 +6,17 @@
     <title>Hunting Game - Playable Ad</title>
 </head>
 <body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loading-content">
+            <img id="loading-logo" src="" alt="Logo">
+            <div class="loading-bar-container">
+                <div class="loading-bar" id="loading-bar"></div>
+            </div>
+            <div class="loading-text" id="loading-text">Loading... 0%</div>
+        </div>
+    </div>
+
     <canvas id="game"></canvas>
     
     <div id="ui">
@@ -26,18 +37,17 @@
         </div>
         
         <div id="target-info">
-            <span class="name" id="target-name">Deer</span>
+            <span class="label">Distance</span>
             <span class="distance" id="target-distance">45m</span>
         </div>
         
-        <div id="hint">Use joystick to aim • Tap button to shoot</div>
+        <!-- Hint removed - tutorial animation shows instructions -->
         
         <div id="joystick-zone">
             <div id="joystick-base"></div>
-            <div id="joystick-stick"></div>
+            <div id="joystick-stick" class="tutorial"></div>
+            <div id="release-hint">Release to shoot</div>
         </div>
-        
-        <div id="shoot-btn"></div>
         
         <div id="hit-effect"></div>
         <div id="bullet-time">

@@ -4,13 +4,76 @@ body {
     overflow: hidden; 
     touch-action: none;
     font-family: 'Segoe UI', Arial, sans-serif;
-    background: #0a0a12;
+    background: #000000;
 }
 
 #game { 
     width: 100vw; 
     height: 100vh; 
     display: block; 
+}
+
+/* ========== Loading Screen ========== */
+#loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    transition: opacity 0.5s ease;
+}
+
+#loading-screen.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.loading-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+}
+
+#loading-logo {
+    max-width: 80vw;
+    max-height: 30vh;
+    object-fit: contain;
+}
+
+.loading-bar-container {
+    width: 280px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.loading-bar {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #4a90a4, #6bb8d0, #4a90a4);
+    background-size: 200% 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    animation: loadingShimmer 1.5s infinite linear;
+}
+
+@keyframes loadingShimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.loading-text {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
 }
 
 /* ========== UI Overlay ========== */
@@ -157,8 +220,8 @@ body {
 }
 
 #target-info.visible { opacity: 1; }
-#target-info .name { color: #ffcc00; font-weight: bold; }
-#target-info .distance { color: #aaa; margin-left: 10px; }
+#target-info .label { color: #aaa; }
+#target-info .distance { color: #fff; font-weight: bold; margin-left: 8px; }
 
 /* ========== Hint ========== */
 #hint {
@@ -180,27 +243,27 @@ body {
 /* ========== CTA Button ========== */
 #cta {
     position: absolute;
-    bottom: 40px; left: 50%;
-    transform: translateX(-50%);
+    top: 20px; 
+    right: 20px;
     background: linear-gradient(135deg, #ff6b35, #f7931e);
     color: white;
-    padding: 18px 50px;
-    font-size: 18px;
+    padding: 14px 28px;
+    font-size: 14px;
     font-weight: bold;
     border: none;
-    border-radius: 30px;
+    border-radius: 25px;
     cursor: pointer;
     pointer-events: auto;
-    box-shadow: 0 8px 30px rgba(255,107,53,0.5);
+    box-shadow: 0 6px 20px rgba(255,107,53,0.5);
     text-transform: uppercase;
-    letter-spacing: 2px;
+    letter-spacing: 1px;
     display: none;
-    animation: ctaBounce 1s infinite;
+    animation: ctaPulse 1.5s infinite;
 }
 
-@keyframes ctaBounce {
-    0%, 100% { transform: translateX(-50%) scale(1); }
-    50% { transform: translateX(-50%) scale(1.05); }
+@keyframes ctaPulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 6px 20px rgba(255,107,53,0.5); }
+    50% { transform: scale(1.08); box-shadow: 0 8px 30px rgba(255,107,53,0.7); }
 }
 
 /* ========== Effects ========== */
@@ -269,11 +332,31 @@ body {
     100% { opacity: 0; transform: translate(-50%, -80px) scale(1); }
 }
 
+/* ========== Miss Popup ========== */
+.miss-popup {
+    position: absolute;
+    color: #ff4444;
+    font-size: 48px;
+    font-weight: bold;
+    text-shadow: 0 0 30px rgba(255,68,68,0.8), 0 4px 8px rgba(0,0,0,0.7);
+    pointer-events: none;
+    letter-spacing: 8px;
+    animation: missFloat 1.2s ease-out forwards;
+}
+
+@keyframes missFloat {
+    0% { opacity: 0; transform: translate(-50%, 0) scale(0.3); }
+    15% { opacity: 1; transform: translate(-50%, -5px) scale(1.3); }
+    30% { transform: translate(-50%, -10px) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -60px) scale(0.8); }
+}
+
 /* ========== Virtual Joystick ========== */
 #joystick-zone {
     position: absolute;
-    left: 20px;
-    bottom: 20px;
+    left: 50%;
+    bottom: 40px;
+    transform: translateX(-50%);
     width: 140px;
     height: 140px;
     pointer-events: auto;
@@ -303,6 +386,50 @@ body {
     transform: translate(-50%, -50%);
     transition: transform 0.05s ease-out;
     box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+/* Tutorial animation for joystick - 2 points */
+#joystick-stick.tutorial {
+    animation: joystickTutorial 1.2s ease-in-out infinite;
+}
+
+@keyframes joystickTutorial {
+    0%, 100% { transform: translate(-50%, -50%); }
+    50% { transform: translate(calc(-50% + 30px), calc(-50% - 25px)); }
+}
+
+/* Hide joystick elements when active */
+#joystick-zone.active #joystick-base,
+#joystick-zone.active #joystick-stick {
+    opacity: 0 !important;
+}
+
+/* Release to shoot hint */
+#release-hint {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255,255,255,0.9);
+    font-size: 14px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+#release-hint.visible {
+    opacity: 1;
+    animation: releaseHintPulse 1s ease-in-out infinite;
+}
+
+@keyframes releaseHintPulse {
+    0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
 }
 
 /* ========== Shoot Button ========== */
