@@ -353,8 +353,9 @@ export class Game {
         
         const onEnd = () => {
             // Shoot when joystick is released
+            let wasHit = false;
             if (this.joystick.active) {
-                this.shoot();
+                wasHit = this.shoot();
                 // Mark first shot done - hide tutorial elements permanently
                 if (!this.joystick.firstShotDone) {
                     this.joystick.firstShotDone = true;
@@ -365,9 +366,11 @@ export class Game {
             // Zoom out when released
             this.state.targetFov = CONFIG.baseFov;
             
-            // Reset camera to initial position after shot
-            this.state.targetRotation.x = this.initialRotation.x;
-            this.state.targetRotation.y = this.initialRotation.y;
+            // Reset camera to initial position only on hit (not on miss)
+            if (wasHit) {
+                this.state.targetRotation.x = this.initialRotation.x;
+                this.state.targetRotation.y = this.initialRotation.y;
+            }
             
             // Hide UI elements
             zone.classList.remove('active');
@@ -605,8 +608,11 @@ export class Game {
     
     // ============ SHOOTING ============
     
+    /**
+     * Shoot - returns true if hit, false if miss
+     */
     shoot() {
-        if (!this.state.canShoot || this.bulletTime.active) return;
+        if (!this.state.canShoot || this.bulletTime.active) return false;
         
         // Init audio if needed and play gunshot
         this.initAudio();
@@ -621,11 +627,13 @@ export class Game {
             this.state.timeScale = this.bulletTime.start(this.state.targetedAnimal);
             this.setBulletTimeUI(true);
             // Camera shake is now triggered inside bulletTime.start()
+            return true;
         } else {
             // Miss - show miss text and camera shake
             this.showMiss();
             this.startCameraShake(0.7);
             setTimeout(() => { this.state.canShoot = true; }, CONFIG.shootCooldown);
+            return false;
         }
     }
     
