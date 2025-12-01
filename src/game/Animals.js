@@ -1,5 +1,9 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CONFIG } from '../config';
+import deerModelSrc from '../assets/deer.glb';
 
 /**
  * Animal factory and management
@@ -11,6 +15,93 @@ export class AnimalManager {
         this.animals = [];
         this.materials = this.createMaterials();
         this.labelTextures = new Map(); // Cache for label textures
+        
+        // Deer model from GLB
+        this.deerModel = null;
+        this.deerAnimations = null;
+        this.mixers = []; // Animation mixers for all deer
+        this.loadDeerModel();
+    }
+    
+    loadDeerModel() {
+        const loader = new GLTFLoader();
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('node_modules/three/examples/jsm/libs/draco/');
+        loader.setDRACOLoader(dracoLoader);
+        
+        loader.load(deerModelSrc, (gltf) => {
+            this.deerModel = gltf.scene;
+            this.deerAnimations = gltf.animations;
+            
+            // Setup materials for the deer model
+            this.deerModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+            
+            console.log('Deer model loaded with animations:', this.deerAnimations.map(a => a.name));
+            
+            // Replace all existing procedural deer with GLB models
+            this.upgradeExistingDeer();
+        }, undefined, (error) => {
+            console.error('Error loading deer model:', error);
+        });
+    }
+    
+    /**
+     * Replace existing procedural deer with loaded GLB models
+     */
+    upgradeExistingDeer() {
+        this.animals.forEach(animal => {
+            if (animal.userData.type === 'deer' && !animal.userData.mixer) {
+                // Save current state
+                const position = animal.position.clone();
+                const rotationY = animal.rotation.y;
+                const userData = { ...animal.userData };
+                
+                // Remove old children (procedural geometry)
+                while (animal.children.length > 0) {
+                    const child = animal.children[0];
+                    animal.remove(child);
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                }
+                
+                // Add GLB model (use SkeletonUtils.clone for animated models)
+                const model = SkeletonUtils.clone(this.deerModel);
+                model.scale.set(1.85, 1.85, 1.85);
+                model.rotation.y = Math.PI / 2;
+                animal.add(model);
+                
+                // Setup animation mixer
+                const mixer = new THREE.AnimationMixer(model);
+                animal.userData.mixer = mixer;
+                
+                // Find and play the Walk animation
+                const walkAnim = this.deerAnimations.find(a => a.name.toLowerCase().includes('walk'));
+                if (walkAnim) {
+                    const action = mixer.clipAction(walkAnim);
+                    action.play();
+                    animal.userData.walkAction = action;
+                }
+                
+                this.mixers.push(mixer);
+                
+                // Restore position and rotation
+                animal.position.copy(position);
+                animal.rotation.y = rotationY;
+                
+                console.log('Upgraded deer to GLB model');
+            }
+        });
     }
     
     /**
@@ -248,6 +339,38 @@ export class AnimalManager {
     }
     
     createDeer() {
+        // If deer model is loaded, use it with animation
+        if (this.deerModel) {
+            const deer = new THREE.Group();
+            // Use SkeletonUtils.clone for animated models with skeletons
+            const model = SkeletonUtils.clone(this.deerModel);
+            
+            // Scale the model appropriately
+            model.scale.set(1.85, 1.85, 1.85);
+            
+            // Rotate to face +X direction (model may face different direction)
+            model.rotation.y = Math.PI / 2;
+            
+            deer.add(model);
+            
+            // Setup animation mixer for this deer
+            const mixer = new THREE.AnimationMixer(model);
+            deer.userData.mixer = mixer;
+            
+            // Find and play the Walk animation
+            const walkAnim = this.deerAnimations.find(a => a.name.toLowerCase().includes('walk'));
+            if (walkAnim) {
+                const action = mixer.clipAction(walkAnim);
+                action.play();
+                deer.userData.walkAction = action;
+            }
+            
+            this.mixers.push(mixer);
+            
+            return deer;
+        }
+        
+        // Fallback to procedural deer if model not loaded yet
         const deer = new THREE.Group();
         const m = this.materials;
         
@@ -451,6 +574,10 @@ export class AnimalManager {
         const dirX = Math.sin(dirAngle);
         const dirZ = Math.cos(dirAngle);
         
+        // Preserve mixer and walkAction if they exist (for GLB deer)
+        const existingMixer = animal.userData?.mixer;
+        const existingWalkAction = animal.userData?.walkAction;
+        
         animal.userData = {
             type,
             points: typeConfig.points,
@@ -461,7 +588,9 @@ export class AnimalManager {
             direction: new THREE.Vector3(dirX, 0, dirZ).normalize(),
             changeTimer: 3 + Math.random() * 4,
             walkCycle: Math.random() * Math.PI * 2,
-            alive: true
+            alive: true,
+            mixer: existingMixer,
+            walkAction: existingWalkAction
         };
         
         // Create 3D label for this animal
@@ -482,23 +611,35 @@ export class AnimalManager {
         const realDelta = delta * timeScale;
         const yawLimit = CONFIG.yawLimit || { min: -1.4, max: 1.4 };
         
+        // Update all animation mixers
+        this.mixers.forEach(mixer => {
+            mixer.update(realDelta);
+        });
+        
         this.animals.forEach(animal => {
             if (!animal.userData.alive) return;
             
             const data = animal.userData;
             
-            // Walk animation (rabbits hop more)
-            const animSpeed = data.type === 'rabbit' ? 8 : 4;
-            data.walkCycle += realDelta * data.speed * animSpeed;
-            animal.children.forEach(child => {
-                if (child.userData.isLeg) {
-                    const offset = child.userData.legIndex < 2 ? 0 : Math.PI;
-                    const side = child.userData.legIndex % 2 === 0 ? 1 : -1;
-                    const amplitude = data.type === 'rabbit' ? 0.6 : 0.4;
-                    // Rotate around Z for forward/backward leg swing (animal faces +X)
-                    child.rotation.z = Math.sin(data.walkCycle + offset) * amplitude * side;
-                }
-            });
+            // Walk animation for non-deer animals (deer use GLB animation)
+            if (data.type !== 'deer' || !data.mixer) {
+                const animSpeed = data.type === 'rabbit' ? 8 : 4;
+                data.walkCycle += realDelta * data.speed * animSpeed;
+                animal.children.forEach(child => {
+                    if (child.userData.isLeg) {
+                        const offset = child.userData.legIndex < 2 ? 0 : Math.PI;
+                        const side = child.userData.legIndex % 2 === 0 ? 1 : -1;
+                        const amplitude = data.type === 'rabbit' ? 0.6 : 0.4;
+                        // Rotate around Z for forward/backward leg swing (animal faces +X)
+                        child.rotation.z = Math.sin(data.walkCycle + offset) * amplitude * side;
+                    }
+                });
+            }
+            
+            // Adjust animation speed based on movement speed for deer
+            if (data.mixer && data.walkAction) {
+                data.walkAction.timeScale = data.speed * 0.5;
+            }
             
             // Movement
             animal.position.addScaledVector(data.direction, data.speed * realDelta);
@@ -585,6 +726,13 @@ export class AnimalManager {
             }
             animal.userData.label.material.dispose();
         }
+        
+        // Remove animation mixer if exists
+        if (animal.userData.mixer) {
+            animal.userData.mixer.stopAllAction();
+            this.mixers = this.mixers.filter(m => m !== animal.userData.mixer);
+        }
+        
         this.scene.remove(animal);
         this.animals = this.animals.filter(a => a !== animal);
     }
@@ -593,6 +741,42 @@ export class AnimalManager {
         // Hide label immediately on death
         this.hideLabel(animal);
         
+        // For deer with GLB model, use Death animation
+        if (animal.userData.type === 'deer' && animal.userData.mixer && this.deerAnimations) {
+            const deathAnim = this.deerAnimations.find(a => a.name.toLowerCase().includes('death'));
+            
+            if (deathAnim) {
+                const mixer = animal.userData.mixer;
+                
+                // Stop all current actions on this mixer
+                mixer.stopAllAction();
+                
+                // Clone the animation clip for this specific deer to avoid conflicts
+                const clonedDeathAnim = deathAnim.clone();
+                
+                // Play death animation
+                const deathAction = mixer.clipAction(clonedDeathAnim);
+                deathAction.setLoop(THREE.LoopOnce);
+                deathAction.clampWhenFinished = true;
+                deathAction.play();
+                
+                // Store the action for cleanup
+                animal.userData.deathAction = deathAction;
+                
+                // Wait for animation to finish, then remove
+                const animDuration = deathAnim.duration * 1000;
+                setTimeout(() => {
+                    setTimeout(() => {
+                        this.remove(animal);
+                        onComplete?.();
+                    }, CONFIG.respawnDelay);
+                }, animDuration);
+                
+                return;
+            }
+        }
+        
+        // Fallback: procedural death animation for other animals
         let t = 0;
         let lastTime = performance.now();
         const startY = animal.position.y;

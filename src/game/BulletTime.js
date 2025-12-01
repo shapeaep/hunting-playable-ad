@@ -178,7 +178,7 @@ export class BulletTime {
         this.bullet.lookAt(this.targetPos);
         
         // Spin bullet around its flight axis (Z)
-        this.bulletSpin += delta * 25; // Fast spin
+        this.bulletSpin += delta * 3; // Fast spin
         if (this.bulletInner) {
             this.bulletInner.rotation.z = this.bulletSpin;
         }

@@ -19,7 +19,10 @@ module.exports = (env, argv) => {
             clean: true
         },
         devServer: {
-            static: './dist',
+            static: [
+                './dist',
+                { directory: path.resolve(__dirname, 'node_modules/three/examples/jsm/libs'), publicPath: '/node_modules/three/examples/jsm/libs' }
+            ],
             hot: true,
             port: 8080
         },
