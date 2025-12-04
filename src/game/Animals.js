@@ -383,26 +383,6 @@ export class AnimalManager {
         return this.world ? this.world.getTerrainHeight(x, z) : 0;
     }
     
-    /**
-     * Check if position is within camera's visible area
-     */
-    isInCameraArea(x, z) {
-        const yawLimit = CONFIG.yawLimit || { min: -1.4, max: 1.4 };
-        // Calculate angle from camera (which looks along -Z initially)
-        const angle = Math.atan2(x, -z);
-        return angle >= yawLimit.min && angle <= yawLimit.max;
-    }
-    
-    /**
-     * Get random angle within camera's yaw limits
-     */
-    getSpawnAngle() {
-        const yawLimit = CONFIG.yawLimit || { min: -1.4, max: 1.4 };
-        // Random angle within yaw limits
-        // Camera yaw directly maps to world angle for spawning
-        return yawLimit.min + Math.random() * (yawLimit.max - yawLimit.min);
-    }
-    
     createMaterials() {
         const { colors } = CONFIG;
         return {
@@ -659,40 +639,23 @@ export class AnimalManager {
         const types = CONFIG.animalTypes;
         let type, animal, x, z;
         
-        // Check if using fixed spawn points
-        if (CONFIG.spawnPoints && CONFIG.spawnPoints.length > 0) {
-            // Use specific spawn point or pick next available
-            let pointIndex = spawnPointIndex;
-            if (pointIndex === null) {
-                // Find an unused spawn point or cycle through
-                pointIndex = this.animals.length % CONFIG.spawnPoints.length;
-            }
-            
-            const spawnPoint = CONFIG.spawnPoints[pointIndex];
-            type = spawnPoint.type;
-            x = spawnPoint.x;
-            z = spawnPoint.z;
-        } else {
-            // Random spawn based on chances
-            const rand = Math.random();
-            
-            if (rand < types.deer.chance) {
-                type = 'deer';
-            } else if (rand < types.deer.chance + types.bear.chance) {
-                type = 'bear';
-            } else {
-                type = 'rabbit';
-            }
-            
-            // Spawn within camera's visible area
-            const angle = this.getSpawnAngle();
-            const { min, max } = CONFIG.spawnRadius;
-            const radius = min + Math.random() * (max - min);
-            
-            // Camera looks at -Z, so use sin/cos directly with yaw angle
-            x = Math.sin(angle) * radius;
-            z = -Math.cos(angle) * radius;
+        // Only spawn at fixed spawn points from config
+        if (!CONFIG.spawnPoints || CONFIG.spawnPoints.length === 0) {
+            console.warn('No spawn points defined in CONFIG.spawnPoints');
+            return null;
         }
+        
+        // Use specific spawn point or pick next available
+        let pointIndex = spawnPointIndex;
+        if (pointIndex === null) {
+            // Cycle through spawn points
+            pointIndex = this.animals.length % CONFIG.spawnPoints.length;
+        }
+        
+        const spawnPoint = CONFIG.spawnPoints[pointIndex];
+        type = spawnPoint.type;
+        x = spawnPoint.x;
+        z = spawnPoint.z;
         
         // Create animal based on type
         if (type === 'deer') {

@@ -72,11 +72,15 @@ export const CONFIG = {
     
     // Spawn points - if defined, animals spawn at these fixed positions
     // Use spawn editor (press E in game) to place points, then copy config with C
-    // spawnPoints: [
-    //     { x: 30, z: -45, type: 'deer' },
-    //     { x: -25, z: -40, type: 'bear' },
-    //     { x: 15, z: -35, type: 'rabbit' }
-    // ],
+    spawnPoints: [
+        { x: 2.9, z: -63.4, type: 'deer' },
+        { x: 11.4, z: -59, type: 'bear' },
+        { x: 7.5, z: -53.2, type: 'rabbit' },
+        { x: -5.2, z: -36, type: 'deer' },
+        { x: 0.8, z: -33.3, type: 'deer' },
+        { x: 1.1, z: -33.8, type: 'deer' },
+        { x: 3.1, z: -35.2, type: 'deer' }
+    ],
     
     // Bullet time
     bulletTimeSpeed: 0.08,
