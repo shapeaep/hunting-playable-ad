@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { CONFIG } from '../config';
 import terrainTextureSrc from '../assets/terrain.jpg';
 import treeModelSrc from '../assets/tree.glb';
 import grassTextureSrc from '../assets/grass.png';
 import rockTextureSrc from '../assets/rock.jpg';
+import { createDracoLoader } from '../utils/dracoLoader';
 
 /**
  * Simple noise function for terrain generation
@@ -161,9 +161,7 @@ export class World {
     
     loadTreeModel() {
         const loader = new GLTFLoader();
-        const dracoLoader = new DRACOLoader();
-        dracoLoader.setDecoderPath('node_modules/three/examples/jsm/libs/draco/');
-        loader.setDRACOLoader(dracoLoader);
+        loader.setDRACOLoader(createDracoLoader());
         
         loader.load(treeModelSrc, (gltf) => {
             // Extract meshes from the tree model

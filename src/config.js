@@ -65,10 +65,18 @@ export const CONFIG = {
     animalSpeed: { min: 1.5, max: 4 },
     spawnRadius: { min: 25, max: 70 },
     animalTypes: {
-        deer: { chance: 0.45, points: 200, boundingRadius: 1.2 },    // Level 3 - most expensive
-        boar: { chance: 0.30, points: 150, boundingRadius: 0.9 },    // Level 2 - medium
-        rabbit: { chance: 0.25, points: 100, boundingRadius: 0.5 }   // Level 1 - cheapest
+        deer: { chance: 0.45, points: 200, boundingRadius: 1, speedMultiplier: 1.0 },      // Level 3 - most expensive
+        bear: { chance: 0.30, points: 150, boundingRadius: 1, speedMultiplier: 0.7 },      // Level 2 - medium (slower)
+        rabbit: { chance: 0.25, points: 100, boundingRadius: 1, speedMultiplier: 1.5 }     // Level 1 - cheapest (faster)
     },
+    
+    // Spawn points - if defined, animals spawn at these fixed positions
+    // Use spawn editor (press E in game) to place points, then copy config with C
+    // spawnPoints: [
+    //     { x: 30, z: -45, type: 'deer' },
+    //     { x: -25, z: -40, type: 'bear' },
+    //     { x: 15, z: -35, type: 'rabbit' }
+    // ],
     
     // Bullet time
     bulletTimeSpeed: 0.08,
@@ -113,7 +121,7 @@ export const CONFIG = {
         
         animals: {
             deer: { main: 0x9c6b4a, light: 0xc49a6c, antler: 0x8b7355 },
-            boar: { main: 0x5c4033, dark: 0x3d2a22, snout: 0x7a5a4a },
+            bear: { main: 0x5c4033, dark: 0x3d2a22, snout: 0x7a5a4a },
             rabbit: { main: 0xd4c4b0, light: 0xf5f0e8, ear: 0xffcccc }
         },
         

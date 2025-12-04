@@ -5,6 +5,7 @@ import { World } from './World';
 import { AnimalManager } from './Animals';
 import { BulletTime } from './BulletTime';
 import { AudioManager } from './AudioManager';
+import { DebugEditor } from './DebugEditor';
 
 /**
  * Main game controller
@@ -32,6 +33,7 @@ export class Game {
             shakeIntensity: 0,
             shakeTime: 0
         };
+        
         
         // Joystick
         this.joystick = {
@@ -80,6 +82,9 @@ export class Game {
         // this.setupShootButton();
         this.setupInput();
         this.clock = new THREE.Clock();
+        
+        // Debug editor (press E to toggle)
+        this.debugEditor = new DebugEditor(this);
     }
     
     /**
@@ -313,6 +318,7 @@ export class Game {
         const onStart = (e) => {
             e.preventDefault();
             if (this.bulletTime.active) return;
+            if (this.debugEditor?.active) return; // Skip in debug mode
             
             // Init audio on first interaction
             this.initAudio();
@@ -438,11 +444,10 @@ export class Game {
     }
     
     setupInput() {
-        // Camera rotation is only via joystick (setupJoystick)
-        // No canvas drag/touch camera control
-        
-        // Spacebar to shoot
+        // Spacebar to shoot (only when not in debug mode)
         document.addEventListener('keydown', (e) => {
+            if (this.debugEditor?.active) return;
+            
             if (e.code === 'Space' && !e.repeat) {
                 e.preventDefault();
                 this.shoot();
@@ -613,6 +618,7 @@ export class Game {
      */
     shoot() {
         if (!this.state.canShoot || this.bulletTime.active) return false;
+        if (this.debugEditor?.active) return false; // No shooting in debug mode
         
         // Init audio if needed and play gunshot
         this.initAudio();
@@ -782,6 +788,15 @@ export class Game {
     
     update() {
         const delta = Math.min(this.clock.getDelta(), 0.1);
+        
+        // Debug mode - free fly camera
+        if (this.debugEditor?.active) {
+            this.debugEditor.update(delta);
+            this.animalManager.update(delta, 1); // Keep animals moving
+            this.animalManager.updateLabels();
+            this.renderer.render(this.scene, this.camera);
+            return;
+        }
         
         if (this.bulletTime.active) {
             const finished = this.bulletTime.update(delta);

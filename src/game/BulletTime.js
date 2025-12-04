@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { CONFIG } from '../config';
 import bulletModelSrc from '../assets/bullet.glb';
+import { createDracoLoader } from '../utils/dracoLoader';
 
 /**
  * Bullet time effect - slow motion bullet camera
@@ -40,11 +40,7 @@ export class BulletTime {
     
     loadBulletModel() {
         const loader = new GLTFLoader();
-        
-        // Setup DRACO decoder
-        const dracoLoader = new DRACOLoader();
-        dracoLoader.setDecoderPath('node_modules/three/examples/jsm/libs/draco/');
-        loader.setDRACOLoader(dracoLoader);
+        loader.setDRACOLoader(createDracoLoader());
         
         loader.load(bulletModelSrc, (gltf) => {
             this.bulletModel = gltf.scene;

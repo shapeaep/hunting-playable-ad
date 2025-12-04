@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CONFIG } from '../config';
 import deerModelSrc from '../assets/deer.glb';
+import bearModelSrc from '../assets/bear.glb';
+import { createDracoLoader } from '../utils/dracoLoader';
 
 /**
  * Animal factory and management
@@ -19,15 +20,19 @@ export class AnimalManager {
         // Deer model from GLB
         this.deerModel = null;
         this.deerAnimations = null;
-        this.mixers = []; // Animation mixers for all deer
+        
+        // Bear model from GLB
+        this.bearModel = null;
+        this.bearAnimations = null;
+        
+        this.mixers = []; // Animation mixers for all animated animals
         this.loadDeerModel();
+        this.loadBearModel();
     }
     
     loadDeerModel() {
         const loader = new GLTFLoader();
-        const dracoLoader = new DRACOLoader();
-        dracoLoader.setDecoderPath('node_modules/three/examples/jsm/libs/draco/');
-        loader.setDRACOLoader(dracoLoader);
+        loader.setDRACOLoader(createDracoLoader());
         
         loader.load(deerModelSrc, (gltf) => {
             this.deerModel = gltf.scene;
@@ -47,6 +52,31 @@ export class AnimalManager {
             this.upgradeExistingDeer();
         }, undefined, (error) => {
             console.error('Error loading deer model:', error);
+        });
+    }
+    
+    loadBearModel() {
+        const loader = new GLTFLoader();
+        loader.setDRACOLoader(createDracoLoader());
+        
+        loader.load(bearModelSrc, (gltf) => {
+            this.bearModel = gltf.scene;
+            this.bearAnimations = gltf.animations;
+            
+            // Setup materials for the bear model
+            this.bearModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+            
+            console.log('Bear model loaded with animations:', this.bearAnimations.map(a => a.name));
+            
+            // Replace all existing procedural bears with GLB bear models
+            this.upgradeExistingBear();
+        }, undefined, (error) => {
+            console.error('Error loading bear model:', error);
         });
     }
     
@@ -105,17 +135,71 @@ export class AnimalManager {
     }
     
     /**
+     * Replace existing procedural bears with loaded GLB bear models
+     */
+    upgradeExistingBear() {
+        this.animals.forEach(animal => {
+            if (animal.userData.type === 'bear' && !animal.userData.mixer) {
+                // Save current state
+                const position = animal.position.clone();
+                const rotationY = animal.rotation.y;
+                const userData = { ...animal.userData };
+                
+                // Remove old children (procedural geometry)
+                while (animal.children.length > 0) {
+                    const child = animal.children[0];
+                    animal.remove(child);
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                }
+                
+                // Add GLB model (use SkeletonUtils.clone for animated models)
+                const model = SkeletonUtils.clone(this.bearModel);
+                model.scale.set(2, 2, 2);
+                model.rotation.y = Math.PI / 2;
+                animal.add(model);
+                
+                // Setup animation mixer
+                const mixer = new THREE.AnimationMixer(model);
+                animal.userData.mixer = mixer;
+                
+                // Find and play the Walk animation
+                const walkAnim = this.bearAnimations.find(a => a.name.toLowerCase().includes('walk'));
+                if (walkAnim) {
+                    const action = mixer.clipAction(walkAnim);
+                    action.play();
+                    animal.userData.walkAction = action;
+                }
+                
+                this.mixers.push(mixer);
+                
+                // Restore position and rotation
+                animal.position.copy(position);
+                animal.rotation.y = rotationY;
+                
+                console.log('Upgraded bear to GLB model');
+            }
+        });
+    }
+    
+    /**
      * Create 3D label for animal with name and price
      */
     createLabel(type, points) {
-        const names = { deer: 'DEER', boar: 'BOAR', rabbit: 'HARE' };
+        const names = { deer: 'DEER', bear: 'BEAR', rabbit: 'HARE' };
         const name = names[type] || type.toUpperCase();
         
         // Level and color scheme per animal type
-        // Deer: Level 3, Gold | Boar: Level 2, Purple | Rabbit: Level 1, Gray
+        // Deer: Level 3, Gold | Bear: Level 2, Purple | Rabbit: Level 1, Gray
         const levelConfig = {
             deer: { level: 3, circleColor: '#ffd700', nameGradient: ['#ffd700', '#c5a000'], priceGradient: ['#b8860b', '#8b6914'], textColor: '#5a4a00', circleTextColor: '#5a4a00' },
-            boar: { level: 2, circleColor: '#9b59b6', nameGradient: ['#9b59b6', '#7d3c98'], priceGradient: ['#6c3483', '#512e5f'], textColor: '#ffffff', circleTextColor: '#ffffff' },
+            bear: { level: 2, circleColor: '#9b59b6', nameGradient: ['#9b59b6', '#7d3c98'], priceGradient: ['#6c3483', '#512e5f'], textColor: '#ffffff', circleTextColor: '#ffffff' },
             rabbit: { level: 1, circleColor: '#e0e0e0', nameGradient: ['#f5f5f5', '#d0d0d0'], priceGradient: ['#4a4a4a', '#2a2a2a'], textColor: '#333333', circleTextColor: '#333333' }
         };
         const config = levelConfig[type] || levelConfig.rabbit;
@@ -286,7 +370,7 @@ export class AnimalManager {
             const label = animal.userData.label;
             // Position label above animal's head
             const heightOffset = animal.userData.type === 'rabbit' ? 1.5 : 
-                                 animal.userData.type === 'boar' ? 2.0 : 2.8;
+                                 animal.userData.type === 'bear' ? 3 : 2.8;
             label.position.copy(animal.position);
             label.position.y += heightOffset;
         });
@@ -325,9 +409,9 @@ export class AnimalManager {
             deer: new THREE.MeshLambertMaterial({ color: colors.animals.deer.main }),
             deerLight: new THREE.MeshLambertMaterial({ color: colors.animals.deer.light }),
             antler: new THREE.MeshLambertMaterial({ color: colors.animals.deer.antler }),
-            boar: new THREE.MeshLambertMaterial({ color: colors.animals.boar.main }),
-            boarDark: new THREE.MeshLambertMaterial({ color: colors.animals.boar.dark }),
-            snout: new THREE.MeshLambertMaterial({ color: colors.animals.boar.snout }),
+            bear: new THREE.MeshLambertMaterial({ color: colors.animals.bear.main }),
+            bearDark: new THREE.MeshLambertMaterial({ color: colors.animals.bear.dark }),
+            snout: new THREE.MeshLambertMaterial({ color: colors.animals.bear.snout }),
             rabbit: new THREE.MeshLambertMaterial({ color: colors.animals.rabbit.main }),
             rabbitLight: new THREE.MeshLambertMaterial({ color: colors.animals.rabbit.light }),
             rabbitEar: new THREE.MeshLambertMaterial({ color: colors.animals.rabbit.ear }),
@@ -422,50 +506,82 @@ export class AnimalManager {
         return deer;
     }
     
-    createBoar() {
-        const boar = new THREE.Group();
+    createBear() {
+        // If bear model is loaded, use it with animation
+        if (this.bearModel) {
+            const bear = new THREE.Group();
+            // Use SkeletonUtils.clone for animated models with skeletons
+            const model = SkeletonUtils.clone(this.bearModel);
+            
+            // Scale the model appropriately
+            model.scale.set(2, 2, 2);
+            
+            // Rotate to face +X direction (model may face different direction)
+            model.rotation.y = Math.PI / 2;
+            
+            bear.add(model);
+            
+            // Setup animation mixer for this bear
+            const mixer = new THREE.AnimationMixer(model);
+            bear.userData.mixer = mixer;
+            
+            // Find and play the Walk animation
+            const walkAnim = this.bearAnimations.find(a => a.name.toLowerCase().includes('walk'));
+            if (walkAnim) {
+                const action = mixer.clipAction(walkAnim);
+                action.play();
+                bear.userData.walkAction = action;
+            }
+            
+            this.mixers.push(mixer);
+            
+            return bear;
+        }
+        
+        // Fallback to procedural bear if bear model not loaded yet
+        const bear = new THREE.Group();
         const m = this.materials;
         
         // Body
-        boar.add(this.mesh(new THREE.BoxGeometry(1.4, 0.7, 0.8), m.boar, [0, 0.65, 0], true));
+        bear.add(this.mesh(new THREE.BoxGeometry(1.4, 0.7, 0.8), m.bear, [0, 0.65, 0], true));
         
         // Back hump
-        const hump = this.mesh(new THREE.SphereGeometry(0.35, 8, 6), m.boarDark, [-0.2, 1.0, 0]);
+        const hump = this.mesh(new THREE.SphereGeometry(0.35, 8, 6), m.bearDark, [-0.2, 1.0, 0]);
         hump.scale.set(1.2, 0.8, 1);
-        boar.add(hump);
+        bear.add(hump);
         
         // Head
-        boar.add(this.mesh(new THREE.BoxGeometry(0.5, 0.45, 0.55), m.boar, [0.8, 0.6, 0]));
+        bear.add(this.mesh(new THREE.BoxGeometry(0.5, 0.45, 0.55), m.bear, [0.8, 0.6, 0]));
         
         // Snout
         const snout = this.mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.3, 8), m.snout, [1.1, 0.5, 0]);
         snout.rotation.z = Math.PI / 2;
-        boar.add(snout);
+        bear.add(snout);
         
         // Tusks
         const tuskGeo = new THREE.ConeGeometry(0.03, 0.15, 4);
         [-0.15, 0.15].forEach(z => {
             const tusk = this.mesh(tuskGeo, m.tusk, [1.05, 0.35, z]);
             tusk.rotation.x = z > 0 ? -0.3 : 0.3;
-            boar.add(tusk);
+            bear.add(tusk);
         });
         
         // Ears
         const earGeo = new THREE.BoxGeometry(0.08, 0.15, 0.12);
-        [-0.2, 0.2].forEach(z => boar.add(this.mesh(earGeo, m.boarDark, [0.7, 0.9, z])));
+        [-0.2, 0.2].forEach(z => bear.add(this.mesh(earGeo, m.bearDark, [0.7, 0.9, z])));
         
         // Legs
-        this.addLegs(boar, m.boar, [
+        this.addLegs(bear, m.bear, [
             [-0.4, 0.25, -0.25], [-0.4, 0.25, 0.25],
             [0.4, 0.25, -0.25], [0.4, 0.25, 0.25]
         ], 0.5);
         
         // Tail
-        const tail = this.mesh(new THREE.CylinderGeometry(0.02, 0.04, 0.2, 4), m.boar, [-0.8, 0.7, 0]);
+        const tail = this.mesh(new THREE.CylinderGeometry(0.02, 0.04, 0.2, 4), m.bear, [-0.8, 0.7, 0]);
         tail.rotation.z = 0.5;
-        boar.add(tail);
+        bear.add(tail);
         
-        return boar;
+        return bear;
     }
     
     createRabbit() {
@@ -539,33 +655,56 @@ export class AnimalManager {
         });
     }
     
-    spawn() {
-        // Determine animal type based on chances
-        const rand = Math.random();
+    spawn(spawnPointIndex = null) {
         const types = CONFIG.animalTypes;
-        let type, animal;
+        let type, animal, x, z;
         
-        if (rand < types.deer.chance) {
-            type = 'deer';
-            animal = this.createDeer();
-        } else if (rand < types.deer.chance + types.boar.chance) {
-            type = 'boar';
-            animal = this.createBoar();
+        // Check if using fixed spawn points
+        if (CONFIG.spawnPoints && CONFIG.spawnPoints.length > 0) {
+            // Use specific spawn point or pick next available
+            let pointIndex = spawnPointIndex;
+            if (pointIndex === null) {
+                // Find an unused spawn point or cycle through
+                pointIndex = this.animals.length % CONFIG.spawnPoints.length;
+            }
+            
+            const spawnPoint = CONFIG.spawnPoints[pointIndex];
+            type = spawnPoint.type;
+            x = spawnPoint.x;
+            z = spawnPoint.z;
         } else {
-            type = 'rabbit';
+            // Random spawn based on chances
+            const rand = Math.random();
+            
+            if (rand < types.deer.chance) {
+                type = 'deer';
+            } else if (rand < types.deer.chance + types.bear.chance) {
+                type = 'bear';
+            } else {
+                type = 'rabbit';
+            }
+            
+            // Spawn within camera's visible area
+            const angle = this.getSpawnAngle();
+            const { min, max } = CONFIG.spawnRadius;
+            const radius = min + Math.random() * (max - min);
+            
+            // Camera looks at -Z, so use sin/cos directly with yaw angle
+            x = Math.sin(angle) * radius;
+            z = -Math.cos(angle) * radius;
+        }
+        
+        // Create animal based on type
+        if (type === 'deer') {
+            animal = this.createDeer();
+        } else if (type === 'bear') {
+            animal = this.createBear();
+        } else {
             animal = this.createRabbit();
         }
         
         const typeConfig = types[type];
         
-        // Spawn within camera's visible area
-        const angle = this.getSpawnAngle();
-        const { min, max } = CONFIG.spawnRadius;
-        const radius = min + Math.random() * (max - min);
-        
-        // Camera looks at -Z, so use sin/cos directly with yaw angle
-        const x = Math.sin(angle) * radius;
-        const z = -Math.cos(angle) * radius;
         const y = this.getHeight(x, z);
         animal.position.set(x, y, z);
         
@@ -578,13 +717,15 @@ export class AnimalManager {
         const existingMixer = animal.userData?.mixer;
         const existingWalkAction = animal.userData?.walkAction;
         
+        const speedMultiplier = typeConfig.speedMultiplier || 1.0;
+        const baseSpeed = CONFIG.animalSpeed.min + Math.random() * (CONFIG.animalSpeed.max - CONFIG.animalSpeed.min);
+        
         animal.userData = {
             type,
             points: typeConfig.points,
             boundingRadius: typeConfig.boundingRadius,
-            speed: type === 'rabbit' 
-                ? CONFIG.animalSpeed.min * 1.5 + Math.random() * CONFIG.animalSpeed.max 
-                : CONFIG.animalSpeed.min + Math.random() * (CONFIG.animalSpeed.max - CONFIG.animalSpeed.min),
+            speedMultiplier,
+            speed: baseSpeed * speedMultiplier,
             direction: new THREE.Vector3(dirX, 0, dirZ).normalize(),
             changeTimer: 3 + Math.random() * 4,
             walkCycle: Math.random() * Math.PI * 2,
@@ -621,8 +762,8 @@ export class AnimalManager {
             
             const data = animal.userData;
             
-            // Walk animation for non-deer animals (deer use GLB animation)
-            if (data.type !== 'deer' || !data.mixer) {
+            // Walk animation for animals without GLB animation (deer and bear use GLB animation)
+            if ((data.type !== 'deer' && data.type !== 'bear') || !data.mixer) {
                 const animSpeed = data.type === 'rabbit' ? 8 : 4;
                 data.walkCycle += realDelta * data.speed * animSpeed;
                 animal.children.forEach(child => {
@@ -663,9 +804,8 @@ export class AnimalManager {
                 const newAngle = Math.random() * Math.PI * 2;
                 data.direction.set(Math.sin(newAngle), 0, Math.cos(newAngle)).normalize();
                 data.changeTimer = data.type === 'rabbit' ? 2 + Math.random() * 3 : 3 + Math.random() * 5;
-                data.speed = data.type === 'rabbit'
-                    ? CONFIG.animalSpeed.min * 1.5 + Math.random() * CONFIG.animalSpeed.max
-                    : CONFIG.animalSpeed.min + Math.random() * (CONFIG.animalSpeed.max - CONFIG.animalSpeed.min);
+                const baseSpeed = CONFIG.animalSpeed.min + Math.random() * (CONFIG.animalSpeed.max - CONFIG.animalSpeed.min);
+                data.speed = baseSpeed * (data.speedMultiplier || 1.0);
             }
             
             // Boundary check - keep animals in playable area
@@ -752,6 +892,41 @@ export class AnimalManager {
                 mixer.stopAllAction();
                 
                 // Clone the animation clip for this specific deer to avoid conflicts
+                const clonedDeathAnim = deathAnim.clone();
+                
+                // Play death animation
+                const deathAction = mixer.clipAction(clonedDeathAnim);
+                deathAction.setLoop(THREE.LoopOnce);
+                deathAction.clampWhenFinished = true;
+                deathAction.play();
+                
+                // Store the action for cleanup
+                animal.userData.deathAction = deathAction;
+                
+                // Wait for animation to finish, then remove
+                const animDuration = deathAnim.duration * 1000;
+                setTimeout(() => {
+                    setTimeout(() => {
+                        this.remove(animal);
+                        onComplete?.();
+                    }, CONFIG.respawnDelay);
+                }, animDuration);
+                
+                return;
+            }
+        }
+        
+        // For bear with GLB model, use Death animation
+        if (animal.userData.type === 'bear' && animal.userData.mixer && this.bearAnimations) {
+            const deathAnim = this.bearAnimations.find(a => a.name.toLowerCase().includes('death'));
+            
+            if (deathAnim) {
+                const mixer = animal.userData.mixer;
+                
+                // Stop all current actions on this mixer
+                mixer.stopAllAction();
+                
+                // Clone the animation clip for this specific bear to avoid conflicts
                 const clonedDeathAnim = deathAnim.clone();
                 
                 // Play death animation
