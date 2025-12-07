@@ -1,8 +1,16 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config';
 
+// API endpoint for spawn points (built into webpack dev server)
+const API_URL = '/api/spawn-points';
+
 /**
  * Debug Editor - Free-fly camera and spawn point placement
+ * Features:
+ * - Load existing spawn points from config on start
+ * - Auto-save spawn points to config.js via dev server
+ * - Right-click to delete spawn points
+ * - Visual markers for all spawn points
  */
 export class DebugEditor {
     constructor(game) {
@@ -32,11 +40,52 @@ export class DebugEditor {
         this.selectedType = 'deer';
         this.currentCoords = { x: 0, z: 0 };
         
-        // Raycaster for ground intersection
+        // Raycaster for ground intersection and marker picking
         this.raycaster = new THREE.Raycaster();
         this.screenCenter = new THREE.Vector2(0, 0);
         
+        // Auto-save debounce
+        this.saveTimeout = null;
+        this.lastSaveStatus = '';
+        
         this.setupInput();
+        
+        // Load existing spawn points from config
+        this.loadExistingPoints();
+    }
+    
+    async loadExistingPoints() {
+        // Определяем dev режим по URL
+        const isDev = window.location.hostname === 'localhost' && window.location.port === '8080';
+        
+        if (isDev) {
+            // Development: Load from API
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                if (data.success && data.points && data.points.length > 0) {
+                    this.spawnPoints = data.points.map(p => ({
+                        x: p.x,
+                        z: p.z,
+                        type: p.type
+                    }));
+                    console.log(`%c📍 Loaded ${this.spawnPoints.length} spawn points from API`, 'color: #2196F3');
+                    return;
+                }
+            } catch (e) {
+                // API недоступен - fallback to CONFIG
+            }
+        }
+        
+        // Production или fallback: берём из CONFIG (загружены из JSON импорта)
+        if (CONFIG.spawnPoints && Array.isArray(CONFIG.spawnPoints) && CONFIG.spawnPoints.length > 0) {
+            this.spawnPoints = CONFIG.spawnPoints.map(p => ({
+                x: p.x,
+                z: p.z,
+                type: p.type || 'deer'
+            }));
+            console.log(`%c📍 Loaded ${this.spawnPoints.length} spawn points from config`, 'color: #2196F3');
+        }
     }
     
     setupInput() {
@@ -44,6 +93,7 @@ export class DebugEditor {
         document.addEventListener('keyup', (e) => this.onKeyUp(e));
         document.addEventListener('mousemove', (e) => this.onMouseMove(e));
         document.addEventListener('click', (e) => this.onClick(e));
+        document.addEventListener('contextmenu', (e) => this.onRightClick(e));
         document.addEventListener('pointerlockchange', () => this.onPointerLockChange());
     }
     
@@ -72,6 +122,7 @@ export class DebugEditor {
         if (e.code === 'Digit3') { this.selectedType = 'rabbit'; this.updateUI(); }
         if (e.code === 'KeyC' && !e.repeat) this.copyToClipboard();
         if (e.code === 'KeyX' && !e.repeat) this.clearPoints();
+        if (e.code === 'KeyZ' && !e.repeat) this.undoLastPoint();
     }
     
     onKeyUp(e) {
@@ -105,6 +156,15 @@ export class DebugEditor {
         }
     }
     
+    onRightClick(e) {
+        if (!this.active || !this.mouseLocked) return;
+        
+        e.preventDefault();
+        
+        // Delete nearest spawn point to crosshair
+        this.deleteNearestPoint();
+    }
+    
     onPointerLockChange() {
         this.mouseLocked = document.pointerLockElement === this.canvas;
         this.updateUI();
@@ -129,9 +189,9 @@ export class DebugEditor {
         };
         this.savedFov = this.camera.fov;
         
-            // Reset FOV to normal (not zoomed)
-            this.camera.fov = CONFIG.baseFov;
-            this.camera.updateProjectionMatrix();
+        // Reset FOV to normal (not zoomed)
+        this.camera.fov = CONFIG.baseFov;
+        this.camera.updateProjectionMatrix();
         
         // Set camera to free look mode
         this.camera.rotation.order = 'YXZ';
@@ -144,9 +204,12 @@ export class DebugEditor {
         // Create debug UI
         this.createUI();
         
+        // Create markers for existing spawn points
+        this.recreateAllMarkers();
+        
         console.log('%c🔧 DEBUG MODE ENABLED', 'color: #4CAF50; font-size: 16px; font-weight: bold');
         console.log('Controls: WASD=Move, Space/Q=Up/Down, Shift=Fast, Mouse=Look');
-        console.log('Spawn: 1/2/3=Type, Click=Place, C=Copy, X=Clear, E=Exit');
+        console.log('Spawn: 1/2/3=Type, LClick=Place, RClick=Delete, Z=Undo, C=Copy, X=Clear, E=Exit');
     }
     
     exit() {
@@ -178,7 +241,11 @@ export class DebugEditor {
         // Remove debug UI
         this.removeUI();
         
+        // Hide markers (but keep data)
+        this.hideAllMarkers();
+        
         console.log('%c🔧 DEBUG MODE DISABLED', 'color: #f44336; font-size: 16px');
+        console.log('%c💡 Refresh page (F5) to see animals at new spawn points', 'color: #FF9800');
     }
     
     setGameUIVisible(visible) {
@@ -241,13 +308,58 @@ export class DebugEditor {
         };
         
         this.spawnPoints.push(point);
-        this.createMarker(point);
+        this.createMarker(point, this.spawnPoints.length - 1);
         this.updateUI();
+        this.scheduleSave();
         
         console.log(`%c+ Added ${point.type.toUpperCase()} at (${point.x}, ${point.z})`, 'color: #4CAF50');
     }
     
-    createMarker(point) {
+    deleteNearestPoint() {
+        if (this.spawnPoints.length === 0) return;
+        
+        // Find the nearest point to current crosshair position
+        let nearestIdx = -1;
+        let nearestDist = Infinity;
+        
+        for (let i = 0; i < this.spawnPoints.length; i++) {
+            const p = this.spawnPoints[i];
+            const dist = Math.sqrt(
+                Math.pow(p.x - this.currentCoords.x, 2) + 
+                Math.pow(p.z - this.currentCoords.z, 2)
+            );
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearestIdx = i;
+            }
+        }
+        
+        // Only delete if within reasonable distance (10 units)
+        if (nearestIdx >= 0 && nearestDist < 10) {
+            const deleted = this.spawnPoints.splice(nearestIdx, 1)[0];
+            this.recreateAllMarkers();
+            this.updateUI();
+            this.scheduleSave();
+            
+            console.log(`%c- Removed ${deleted.type.toUpperCase()} at (${deleted.x}, ${deleted.z})`, 'color: #f44336');
+        }
+    }
+    
+    undoLastPoint() {
+        if (this.spawnPoints.length === 0) {
+            console.log('%c⚠ No points to undo', 'color: #FF9800');
+            return;
+        }
+        
+        const removed = this.spawnPoints.pop();
+        this.recreateAllMarkers();
+        this.updateUI();
+        this.scheduleSave();
+        
+        console.log(`%c↩ Undid ${removed.type.toUpperCase()} at (${removed.x}, ${removed.z})`, 'color: #FF9800');
+    }
+    
+    createMarker(point, index) {
         const colors = {
             deer: 0xFFD700,
             bear: 0x9C27B0,
@@ -255,6 +367,7 @@ export class DebugEditor {
         };
         
         const marker = new THREE.Group();
+        marker.userData.spawnIndex = index;
         
         // Pole
         const poleGeo = new THREE.CylinderGeometry(0.1, 0.1, 3, 8);
@@ -270,6 +383,20 @@ export class DebugEditor {
         sphere.position.y = 3.2;
         marker.add(sphere);
         
+        // Number label (index + 1)
+        // Using a simple ring to indicate index (visual distinction)
+        const ringGeo = new THREE.RingGeometry(0.5, 0.6, 16);
+        const ringMat = new THREE.MeshBasicMaterial({ 
+            color: 0xffffff, 
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.7
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.position.y = 0.1;
+        ring.rotation.x = -Math.PI / 2;
+        marker.add(ring);
+        
         // Position marker
         const y = this.game.world ? this.game.world.getTerrainHeight(point.x, point.z) : 0;
         marker.position.set(point.x, y, point.z);
@@ -278,12 +405,91 @@ export class DebugEditor {
         this.markers.push(marker);
     }
     
+    recreateAllMarkers() {
+        // Remove all existing markers
+        this.markers.forEach(marker => this.scene.remove(marker));
+        this.markers = [];
+        
+        // Create markers for all spawn points
+        this.spawnPoints.forEach((point, index) => {
+            this.createMarker(point, index);
+        });
+    }
+    
+    hideAllMarkers() {
+        this.markers.forEach(marker => this.scene.remove(marker));
+        this.markers = [];
+    }
+    
     clearPoints() {
+        if (this.spawnPoints.length === 0) {
+            console.log('%c⚠ No points to clear', 'color: #FF9800');
+            return;
+        }
+        
         this.markers.forEach(marker => this.scene.remove(marker));
         this.markers = [];
         this.spawnPoints = [];
         this.updateUI();
+        this.scheduleSave();
+        
         console.log('%c✖ Cleared all spawn points', 'color: #f44336');
+    }
+    
+    // Auto-save with debounce
+    scheduleSave() {
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+        }
+        
+        this.lastSaveStatus = 'saving...';
+        this.updateSaveStatus();
+        
+        this.saveTimeout = setTimeout(() => {
+            this.saveToServer();
+        }, 500); // 500ms debounce
+    }
+    
+    async saveToServer() {
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ points: this.spawnPoints })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Обновляем CONFIG напрямую в рантайме
+                CONFIG.spawnPoints = [...this.spawnPoints];
+                this.lastSaveStatus = '✓ saved';
+                console.log(`%c💾 Auto-saved ${this.spawnPoints.length} points to config.js`, 'color: #4CAF50');
+            } else {
+                this.lastSaveStatus = '✗ error';
+                console.error('Failed to save:', data.error);
+            }
+        } catch (error) {
+            // Даже без сервера обновляем CONFIG в рантайме
+            CONFIG.spawnPoints = [...this.spawnPoints];
+            this.lastSaveStatus = '✗ offline (runtime only)';
+            console.warn('Dev server not running - changes applied to runtime only');
+        }
+        
+        this.updateSaveStatus();
+    }
+    
+    updateSaveStatus() {
+        const statusEl = document.getElementById('debug-save-status');
+        if (statusEl) {
+            statusEl.textContent = this.lastSaveStatus;
+            statusEl.className = 'debug-save-status';
+            if (this.lastSaveStatus.includes('✓')) {
+                statusEl.classList.add('saved');
+            } else if (this.lastSaveStatus.includes('✗')) {
+                statusEl.classList.add('error');
+            }
+        }
     }
     
     copyToClipboard() {
@@ -293,8 +499,8 @@ export class DebugEditor {
         }
         
         const code = `spawnPoints: [\n${this.spawnPoints.map(p => 
-            `    { x: ${p.x}, z: ${p.z}, type: '${p.type}' }`
-        ).join(',\n')}\n]`;
+            `        { x: ${p.x}, z: ${p.z}, type: '${p.type}' }`
+        ).join(',\n')}\n    ]`;
         
         navigator.clipboard.writeText(code).then(() => {
             console.log('%c📋 Copied to clipboard!', 'color: #4CAF50; font-size: 14px');
@@ -341,9 +547,13 @@ export class DebugEditor {
                         <span class="key">Shift</span> Fast
                     </div>
                     <div class="debug-keys">
-                        <span class="key">Click</span> Place
+                        <span class="key">LClick</span> Place
+                        <span class="key">RClick</span> Delete
+                        <span class="key">Z</span> Undo
+                    </div>
+                    <div class="debug-keys">
                         <span class="key">C</span> Copy
-                        <span class="key">X</span> Clear
+                        <span class="key">X</span> Clear All
                         <span class="key">E</span> Exit
                     </div>
                 </div>
@@ -352,6 +562,7 @@ export class DebugEditor {
                 </div>
                 <div class="debug-count">
                     Points: <b id="debug-point-count">0</b>
+                    <span id="debug-save-status" class="debug-save-status"></span>
                 </div>
             </div>
             <div class="debug-crosshair">+</div>
@@ -381,7 +592,7 @@ export class DebugEditor {
                 font-family: 'Consolas', 'Monaco', monospace;
                 font-size: 13px;
                 border: 2px solid #4CAF50;
-                min-width: 260px;
+                min-width: 280px;
             }
             .debug-title {
                 font-size: 18px;
@@ -446,9 +657,22 @@ export class DebugEditor {
             .debug-count {
                 color: #aaa;
                 font-size: 12px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
             }
             .debug-count b {
                 color: #4CAF50;
+            }
+            .debug-save-status {
+                font-size: 11px;
+                color: #888;
+            }
+            .debug-save-status.saved {
+                color: #4CAF50;
+            }
+            .debug-save-status.error {
+                color: #f44336;
             }
             .debug-crosshair {
                 position: absolute;
@@ -462,6 +686,9 @@ export class DebugEditor {
             }
         `;
         document.head.appendChild(style);
+        
+        // Update initial values
+        this.updateUI();
     }
     
     removeUI() {
@@ -507,4 +734,3 @@ export class DebugEditor {
         }
     }
 }
-

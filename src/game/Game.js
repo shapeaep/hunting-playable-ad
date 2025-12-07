@@ -1,11 +1,15 @@
 import * as THREE from 'three';
 import sdk from '@smoud/playable-sdk';
 import { CONFIG } from '../config';
+import spawnPointsData from '../spawn-points.js';
 import { World } from './World';
 import { AnimalManager } from './Animals';
 import { BulletTime } from './BulletTime';
 import { AudioManager } from './AudioManager';
 import { DebugEditor } from './DebugEditor';
+
+// Устанавливаем spawn points из JS модуля (для production)
+CONFIG.spawnPoints = Array.isArray(spawnPointsData) ? spawnPointsData : [];
 
 /**
  * Main game controller
@@ -65,9 +69,8 @@ export class Game {
         this.world.create();
         
         this.animalManager = new AnimalManager(this.scene, this.world);
-        for (let i = 0; i < CONFIG.animalCount; i++) {
-            this.animalManager.spawn();
-        }
+        // Загружаем spawn points из JSON и спавним животных
+        this.loadSpawnPointsAndSpawn();
         
         this.bulletTime = new BulletTime(this.scene, this.camera);
         
@@ -96,6 +99,35 @@ export class Game {
             this.audio.startAmbient();
             this.audioInitialized = true;
         }
+    }
+    
+    /**
+     * Load spawn points and spawn animals
+     */
+    async loadSpawnPointsAndSpawn() {
+        // Определяем dev режим по URL (localhost:8080 = webpack dev server)
+        const isDev = window.location.hostname === 'localhost' && window.location.port === '8080';
+        
+        if (isDev) {
+            // Development: загружаем через API
+            try {
+                const response = await fetch('/api/spawn-points');
+                const data = await response.json();
+                if (data.success && data.points) {
+                    CONFIG.spawnPoints = data.points;
+                }
+            } catch (e) {
+                // API недоступен - оставляем пустой массив
+            }
+        }
+        // В production CONFIG.spawnPoints уже заполнен из импорта (см. ниже)
+        
+        // Спавним ТОЛЬКО по spawn points (0 точек = 0 животных)
+        for (let i = 0; i < CONFIG.spawnPoints.length; i++) {
+            this.animalManager.spawn();
+        }
+        
+        console.log(`🦌 Spawned ${CONFIG.spawnPoints.length} animals from spawn points`);
     }
     
     setupRenderer() {
@@ -696,7 +728,10 @@ export class Game {
         this.showScorePopup(animal.userData.points);
         
         this.animalManager.animateDeath(animal, () => {
-            this.animalManager.spawn();
+            // Респавн только если НЕ используются spawn points
+            if (!CONFIG.spawnPoints || CONFIG.spawnPoints.length === 0) {
+                this.animalManager.spawn();
+            }
         });
         
         if (this.state.kills >= CONFIG.showCtaAfterKills) {
