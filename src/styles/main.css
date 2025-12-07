@@ -90,6 +90,11 @@ body {
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
+    display: none;  /* Hidden by default */
+}
+
+#scope.visible {
+    display: block;
 }
 
 #scope .vignette {
@@ -119,6 +124,12 @@ body {
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
     width: 100%; height: 100%;
+    display: none;  /* Hidden by default */
+    transition: transform 0.05s ease;
+}
+
+#crosshair.visible {
+    display: block;
 }
 
 #crosshair .h-line,
@@ -203,6 +214,85 @@ body {
     font-weight: bold;
     color: #fff;
     text-shadow: 0 0 20px rgba(255,180,50,0.5);
+}
+
+/* ========== Kills Panel ========== */
+#kills-panel {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, rgba(180,50,50,0.9), rgba(120,30,30,0.95));
+    padding: 12px 30px;
+    border-radius: 25px;
+    border: 2px solid rgba(255,100,100,0.3);
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+#kills-panel .kills-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.7);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+#kills-panel .kills-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 15px rgba(255,100,100,0.5);
+}
+
+/* ========== Tap Hint (above joystick) ========== */
+#tap-hint {
+    position: absolute;
+    bottom: 190px;
+    left: 50%;
+    transform: translateX(-50%);
+    animation: hintPulse 2s ease-in-out infinite;
+}
+
+#tap-hint .hint-text {
+    color: rgba(255,255,255,0.9);
+    font-size: 16px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+    white-space: nowrap;
+}
+
+
+/* ========== Release Hint (when aiming) ========== */
+#release-hint {
+    position: absolute;
+    bottom: 190px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ff6b6b;
+    font-size: 18px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 0 2px 15px rgba(255,100,100,0.8), 0 0 30px rgba(255,0,0,0.5);
+    white-space: nowrap;
+    display: none;
+    animation: releaseHintPulse 0.8s ease-in-out infinite;
+}
+
+#release-hint.visible {
+    display: block;
+}
+
+@keyframes releaseHintPulse {
+    0%, 100% { opacity: 0.8; transform: translateX(-50%) scale(1); }
+    50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+}
+
+@keyframes hintPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
 }
 
 /* ========== Target Info (hidden) ========== */
@@ -371,52 +461,12 @@ body {
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    transition: transform 0.05s ease-out;
     box-shadow: 0 4px 15px rgba(0,0,0,0.3);
 }
 
-/* Tutorial animation for joystick - 2 points */
-#joystick-stick.tutorial {
-    animation: joystickTutorial 1.2s ease-in-out infinite;
-}
-
-@keyframes joystickTutorial {
-    0%, 100% { transform: translate(-50%, -50%); }
-    50% { transform: translate(calc(-50% + 30px), calc(-50% - 25px)); }
-}
-
-/* Hide joystick elements when active */
-#joystick-zone.active #joystick-base,
-#joystick-zone.active #joystick-stick {
-    opacity: 0 !important;
-}
-
-/* Release to shoot hint */
-#release-hint {
-    position: absolute;
-    left: 50%;
-    bottom: 135%;
-    transform: translateX(-50%);
-    color: rgba(255,255,255,0.9);
-    font-size: 16px;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    text-shadow: 0 2px 10px rgba(0,0,0,0.8);
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-
-#release-hint.visible {
-    opacity: 1;
-    animation: releaseHintPulse 1s ease-in-out infinite;
-}
-
-@keyframes releaseHintPulse {
-    0%, 100% { opacity: 0.7; transform: translateX(-50%) scale(1); }
-    50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+/* Hide joystick when aiming */
+#joystick-zone.hidden {
+    display: none;
 }
 
 /* ========== Shoot Button ========== */
@@ -472,19 +522,12 @@ body {
 }
 
 /* ========== Hide elements during bullet time ========== */
-#scope.hidden,
-#crosshair.hidden,
 #joystick-zone.hidden,
+#kills-panel.hidden,
+#tap-hint.hidden,
+#release-hint.hidden,
 #shoot-btn.hidden,
 #target-info.hidden {
-    opacity: 0 !important;
-    pointer-events: none;
-    transition: opacity 0.3s;
-}
-
-#scope,
-#crosshair,
-#target-info {
-    transition: opacity 0.3s;
+    display: none !important;
 }
 

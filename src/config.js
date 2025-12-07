@@ -3,40 +3,32 @@
  */
 export const CONFIG = {
     // Game settings
-    animalCount: 8,
-    showCtaAfterKills: 5,
+    animalCount: 1,  // Start with one animal at a time
+    showCtaAfterKills: 3,  // Show CTA after 3 kills
     ctaUrl: 'https://play.google.com/store',
     autoRedirectDelay: 2000,  // Auto redirect after CTA shows (ms), 0 = disabled
     
     // Random seed (change for different world generation)
-    worldSeed: 5542,
+    worldSeed: 55452,
     
-    // Camera
-    towerHeight: 12,
-    baseFov: 45,
-    zoomedFov: 12,
-    zoomSpeed: 0.1,
-    sensitivity: 0.001,
-    pitchLimit: { min: -0.6, max: 0.15 },
-    yawLimit: { min: -0.3, max: 0.3 },  // ±80° = 160° total horizontal rotation
-    cameraSmoothness: 1,  // Lower = more delay/smoothing (was 0.12)
-    joystickSpeed: 0.13,      // Joystick rotation speed
+    // Camera settings
+    towerHeight: 12,          // Camera height on tower
+    cameraFollow: {
+        smoothness: 0.08,     // LookAt smoothness (lower = smoother)
+    },
+    
+    // FOV and aiming
+    baseFov: 50,              // Normal FOV (watching)
+    zoomedFov: 20,            // Zoomed FOV (aiming)
+    zoomSpeed: 0.15,
+    aimSensitivity: 0.002,    // How fast crosshair moves when aiming
+    crosshairLimit: 0.35,     // Max crosshair offset from center
     
     // Camera shake on shoot
     cameraShake: {
-        intensity: 0.015,      // Shake strength
-        duration: 300,         // Shake duration in ms
-        frequency: 25          // Shake frequency
-    },
-    
-    // Auto-aim (screen-space based)
-    autoAim: {
-        enabled: false,
-        strength: 0.0005,         // Base pull strength (when far from target)
-        precisionStrength: 0.0006, // Precision strength (when close to target)
-        screenRadius: 250,        // Pixel radius from center to detect targets
-        deadzone: 50,             // Pixels - stop correcting when this close
-        maxStep: 0.0008           // Max correction per frame (prevents jumps)
+        intensity: 0.02,       // Shake strength
+        duration: 250,         // Shake duration in ms
+        frequency: 30          // Shake frequency
     },
     
     // World generation
@@ -131,6 +123,10 @@ export const CONFIG = {
     // UI
     shootCooldown: 500,
     respawnDelay: 2000,
+    
+    // Spawn timing
+    firstSpawnDelay: 500,      // Delay before first animal spawns (ms)
+    nextSpawnDelay: 800,       // Delay before next animal spawns after kill (ms)
     
     // Audio
     audio: {

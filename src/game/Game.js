@@ -7,53 +7,50 @@ import { AnimalManager } from './Animals';
 import { BulletTime } from './BulletTime';
 import { AudioManager } from './AudioManager';
 import { DebugEditor } from './DebugEditor';
+import { Rifle } from './Rifle';
 
-// Устанавливаем spawn points из JS модуля (для production)
+// Load spawn points from JS module (for production build)
 CONFIG.spawnPoints = Array.isArray(spawnPointsData) ? spawnPointsData : [];
 
 /**
- * Main game controller
+ * Main game controller - Camera on tower looks at moving animal
  */
 export class Game {
     constructor(canvas) {
         this.canvas = canvas;
         
-        // Initial camera rotation (used to reset after shot)
-        this.initialRotation = { x: -0.2, y: 0 };
-        
-        // State
+        // Game state
         this.state = {
             score: 0,
             kills: 0,
             currentFov: CONFIG.baseFov,
             targetFov: CONFIG.baseFov,
-            targetRotation: { x: this.initialRotation.x, y: this.initialRotation.y },
-            currentRotation: { x: this.initialRotation.x, y: this.initialRotation.y },
             canShoot: true,
-            targetedAnimal: null,
+            isAiming: false,
             timeScale: 1,
-            isUserInputting: false,
+            gameEnded: false,
             // Camera shake
             shakeIntensity: 0,
             shakeTime: 0
         };
         
+        // Current target animal
+        this.currentAnimal = null;
         
-        // Joystick
-        this.joystick = {
-            active: false,
+        // Camera lookAt state (smooth tracking)
+        this.cameraLookAt = {
+            current: new THREE.Vector3(),
+            target: new THREE.Vector3(),
+        };
+        
+        // Crosshair offset (for aiming)
+        this.crosshair = {
+            offsetX: 0,  // -1 to 1 (screen space)
+            offsetY: 0,
             startX: 0,
             startY: 0,
-            deltaX: 0,
-            deltaY: 0,
-            // Store initial camera rotation when joystick starts
-            startRotationX: 0,
-            startRotationY: 0,
-            stick: null,
-            zone: null,
-            releaseHint: null,
-            maxRadius: 50,
-            firstShotDone: false
+            touchStartX: 0,
+            touchStartY: 0,
         };
         
         this.init();
@@ -69,25 +66,29 @@ export class Game {
         this.world.create();
         
         this.animalManager = new AnimalManager(this.scene, this.world);
-        // Загружаем spawn points из JSON и спавним животных
-        this.loadSpawnPointsAndSpawn();
         
         this.bulletTime = new BulletTime(this.scene, this.camera);
         
+        // First-person rifle (follows camera)
+        this.rifle = new Rifle(this.camera, this.scene);
+        
         this.raycaster = new THREE.Raycaster();
-        this.screenCenter = new THREE.Vector2(0, 0);
         
         // Audio system
         this.audio = new AudioManager();
         
-        this.setupJoystick();
-        // Shoot button removed - shooting happens on joystick release
-        // this.setupShootButton();
         this.setupInput();
         this.clock = new THREE.Clock();
         
         // Debug editor (press E to toggle)
         this.debugEditor = new DebugEditor(this);
+        
+        // Initialize UI state
+        this.showAimUI(false);
+        this.updateScoreUI();
+        
+        // Spawn first animal after a short delay
+        setTimeout(() => this.spawnNextAnimal(), CONFIG.firstSpawnDelay || 500);
     }
     
     /**
@@ -102,32 +103,54 @@ export class Game {
     }
     
     /**
-     * Load spawn points and spawn animals
+     * Spawn the next animal (ONLY from spawn points)
      */
-    async loadSpawnPointsAndSpawn() {
-        // Определяем dev режим по URL (localhost:8080 = webpack dev server)
-        const isDev = window.location.hostname === 'localhost' && window.location.port === '8080';
-        
-        if (isDev) {
-            // Development: загружаем через API
-            try {
-                const response = await fetch('/api/spawn-points');
-                const data = await response.json();
-                if (data.success && data.points) {
-                    CONFIG.spawnPoints = data.points;
-                }
-            } catch (e) {
-                // API недоступен - оставляем пустой массив
-            }
-        }
-        // В production CONFIG.spawnPoints уже заполнен из импорта (см. ниже)
-        
-        // Спавним ТОЛЬКО по spawn points (0 точек = 0 животных)
-        for (let i = 0; i < CONFIG.spawnPoints.length; i++) {
-            this.animalManager.spawn();
+    spawnNextAnimal() {
+        // Only spawn from spawn points - no random fallback
+        if (!CONFIG.spawnPoints || CONFIG.spawnPoints.length === 0) {
+            console.log('⚠️ No spawn points defined! Press E to enter debug mode and place spawn points.');
+            return;
         }
         
-        console.log(`🦌 Spawned ${CONFIG.spawnPoints.length} animals from spawn points`);
+        // Check if we have more spawn points
+        if (this.state.kills >= CONFIG.spawnPoints.length) {
+            console.log('✅ All spawn points completed!');
+            this.state.gameEnded = true;
+            setTimeout(() => this.showCTA(), 500);
+            return;
+        }
+        
+        const spawnPoint = CONFIG.spawnPoints[this.state.kills];
+        const animal = this.animalManager.spawnAnimal(
+            spawnPoint.type || 'deer',
+            spawnPoint.x,
+            spawnPoint.z
+        );
+        
+        if (!animal) return;
+        
+        this.currentAnimal = animal;
+        console.log(`🦌 Spawned ${spawnPoint.type || 'deer'} at spawn point #${this.state.kills + 1}/${CONFIG.spawnPoints.length}`);
+        
+        // Look at new animal
+        const lookAt = this.getAnimalLookAtPosition(animal);
+        this.cameraLookAt.target.copy(lookAt);
+        
+        // Snap camera on first spawn
+        if (this.state.kills === 0) {
+            this.cameraLookAt.current.copy(lookAt);
+        }
+    }
+    
+    /**
+     * Get look-at position for animal (center of body)
+     */
+    getAnimalLookAtPosition(animal) {
+        if (!animal) return new THREE.Vector3(0, 0, -50);
+        
+        const pos = animal.position.clone();
+        pos.y += 1; // Look at animal's center/body
+        return pos;
     }
     
     setupRenderer() {
@@ -155,523 +178,258 @@ export class Game {
             0.1,
             500
         );
+        // Camera fixed on tower
         this.camera.position.set(0, CONFIG.towerHeight, 0);
+        
+        // Initialize lookAt to forward
+        this.cameraLookAt.current.set(0, CONFIG.towerHeight - 2, -50);
+        this.cameraLookAt.target.set(0, CONFIG.towerHeight - 2, -50);
     }
     
     setupLighting() {
-        // Store light references for debug
-        this.lights = {};
+        const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+        this.scene.add(ambient);
         
-        this.lights.ambient = new THREE.AmbientLight(0xffffff, 0.7);
-        this.scene.add(this.lights.ambient);
+        const sun = new THREE.DirectionalLight(0xfff8e8, 3);
+        sun.position.set(-110, 200, 95);
+        sun.castShadow = true;
+        sun.shadow.mapSize.width = CONFIG.shadowMapSize;
+        sun.shadow.mapSize.height = CONFIG.shadowMapSize;
+        sun.shadow.camera.near = 10;
+        sun.shadow.camera.far = 300;
+        sun.shadow.camera.left = -100;
+        sun.shadow.camera.right = 100;
+        sun.shadow.camera.top = 100;
+        sun.shadow.camera.bottom = -100;
+        sun.shadow.bias = -0.001;
+        this.scene.add(sun);
         
-        this.lights.sun = new THREE.DirectionalLight(0xfff8e8, 3);
-        this.lights.sun.position.set(-110, 200, 95);
-        this.lights.sun.castShadow = true;
-        this.lights.sun.shadow.mapSize.width = CONFIG.shadowMapSize;
-        this.lights.sun.shadow.mapSize.height = CONFIG.shadowMapSize;
-        this.lights.sun.shadow.camera.near = 10;
-        this.lights.sun.shadow.camera.far = 300;
-        this.lights.sun.shadow.camera.left = -100;
-        this.lights.sun.shadow.camera.right = 100;
-        this.lights.sun.shadow.camera.top = 100;
-        this.lights.sun.shadow.camera.bottom = -100;
-        this.lights.sun.shadow.bias = -0.001;
-        this.scene.add(this.lights.sun);
-        
-        this.lights.rim = new THREE.DirectionalLight(0xffe4b5, 1.3);
-        this.lights.rim.position.set(-50, 30, -50);
-        this.scene.add(this.lights.rim);
-        
-        // Setup debug panel (commented out visualization)
-        this.setupLightDebug();
+        const rim = new THREE.DirectionalLight(0xffe4b5, 1.3);
+        rim.position.set(-50, 30, -50);
+        this.scene.add(rim);
     }
     
-    setupLightDebug() {
-        // Create debug panel
-        const panel = document.createElement('div');
-        panel.id = 'light-debug';
-        panel.innerHTML = `
-            <div class="debug-header">
-                <span>🔆 Light Debug</span>
-                <button id="debug-toggle">−</button>
-            </div>
-            <div class="debug-content" id="debug-content">
-                <div class="debug-section">
-                    <h4>Ambient</h4>
-                    <label>Intensity: <span id="amb-int-val">0.7</span></label>
-                    <input type="range" id="amb-intensity" min="0" max="2" step="0.1" value="0.7">
-                </div>
-                <div class="debug-section">
-                    <h4>Sun</h4>
-                    <label>Intensity: <span id="sun-int-val">3</span></label>
-                    <input type="range" id="sun-intensity" min="0" max="3" step="0.1" value="3">
-                    <label>Pos X: <span id="sun-x-val">-110</span></label>
-                    <input type="range" id="sun-x" min="-200" max="200" step="5" value="-110">
-                    <label>Pos Y: <span id="sun-y-val">200</span></label>
-                    <input type="range" id="sun-y" min="10" max="200" step="5" value="200">
-                    <label>Pos Z: <span id="sun-z-val">95</span></label>
-                    <input type="range" id="sun-z" min="-200" max="200" step="5" value="95">
-                </div>
-                <div class="debug-section">
-                    <h4>Rim</h4>
-                    <label>Intensity: <span id="rim-int-val">1.3</span></label>
-                    <input type="range" id="rim-intensity" min="0" max="2" step="0.1" value="1.3">
-                    <label>Pos X: <span id="rim-x-val">-50</span></label>
-                    <input type="range" id="rim-x" min="-200" max="200" step="5" value="-50">
-                    <label>Pos Y: <span id="rim-y-val">30</span></label>
-                    <input type="range" id="rim-y" min="10" max="200" step="5" value="30">
-                    <label>Pos Z: <span id="rim-z-val">-50</span></label>
-                    <input type="range" id="rim-z" min="-200" max="200" step="5" value="-50">
-                </div>
-                <div class="debug-section">
-                    <h4>Renderer</h4>
-                    <label>Exposure: <span id="exp-val">1</span></label>
-                    <input type="range" id="exposure" min="0.5" max="3" step="0.1" value="1">
-                </div>
-                <button id="copy-settings" class="debug-btn">📋 Copy to Code</button>
-                <div id="copy-status"></div>
-            </div>
-        `;
-        
-        // COMMENTED OUT - uncomment to show debug panel on screen
-        // document.body.appendChild(panel);
-        
-        // Add styles
-        const style = document.createElement('style');
-        style.textContent = `
-            #light-debug {
-                position: fixed;
-                top: 10px;
-                right: 10px;
-                background: rgba(0,0,0,0.85);
-                color: #fff;
-                padding: 0;
-                border-radius: 8px;
-                font-size: 11px;
-                z-index: 9999;
-                width: 220px;
-                font-family: monospace;
-                pointer-events: auto;
-            }
-            .debug-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 8px 12px;
-                background: rgba(255,255,255,0.1);
-                border-radius: 8px 8px 0 0;
-                cursor: pointer;
-            }
-            .debug-header button {
-                background: none;
-                border: none;
-                color: #fff;
-                font-size: 16px;
-                cursor: pointer;
-                padding: 0 5px;
-            }
-            .debug-content {
-                padding: 10px;
-                max-height: 400px;
-                overflow-y: auto;
-            }
-            .debug-content.collapsed {
-                display: none;
-            }
-            .debug-section {
-                margin-bottom: 12px;
-                padding-bottom: 8px;
-                border-bottom: 1px solid rgba(255,255,255,0.1);
-            }
-            .debug-section:last-child {
-                border-bottom: none;
-                margin-bottom: 0;
-            }
-            .debug-section h4 {
-                margin: 0 0 6px 0;
-                color: #6bb8d0;
-                font-size: 11px;
-            }
-            .debug-section label {
-                display: block;
-                margin: 4px 0 2px;
-                color: #aaa;
-            }
-            .debug-section input[type="range"] {
-                width: 100%;
-                margin: 2px 0 6px;
-            }
-            .debug-section span {
-                color: #fff;
-                font-weight: bold;
-            }
-            .debug-btn {
-                width: 100%;
-                padding: 8px;
-                margin-top: 8px;
-                background: #4a90a4;
-                border: none;
-                border-radius: 4px;
-                color: #fff;
-                cursor: pointer;
-                font-size: 11px;
-                font-family: monospace;
-            }
-            .debug-btn:hover {
-                background: #5ba0b4;
-            }
-            #copy-status {
-                text-align: center;
-                padding: 4px;
-                color: #6f6;
-                font-size: 10px;
-            }
-        `;
-        // COMMENTED OUT - uncomment to add styles for debug panel
-        // document.head.appendChild(style);
-    }
-    
-    setupJoystick() {
-        const zone = document.getElementById('joystick-zone');
-        const stick = document.getElementById('joystick-stick');
-        const releaseHint = document.getElementById('release-hint');
-        if (!zone || !stick) return;
-        
-        this.joystick.stick = stick;
-        this.joystick.zone = zone;
-        this.joystick.releaseHint = releaseHint;
-        
+    setupInput() {
         const getPos = (e) => {
             const touch = e.touches?.[0] || e;
             return { x: touch.clientX, y: touch.clientY };
         };
         
         const onStart = (e) => {
-            e.preventDefault();
+            if (this.state.gameEnded) return;
             if (this.bulletTime.active) return;
-            if (this.debugEditor?.active) return; // Skip in debug mode
+            if (this.debugEditor?.active) return;
             
-            // Init audio on first interaction
+            e.preventDefault();
             this.initAudio();
             
-            // Zoom in immediately when joystick pressed
+            // Start aiming
+            this.state.isAiming = true;
             this.state.targetFov = CONFIG.zoomedFov;
             
-            // Hide joystick elements, show release hint (only before first shot)
-            stick.classList.remove('tutorial');
-            zone.classList.add('active');
-            if (!this.joystick.firstShotDone) {
-                releaseHint?.classList.add('visible');
-            }
-            
-            // Use touch position as start point - full screen is control area
+            // Store touch start position
             const pos = getPos(e);
-            this.joystick.active = true;
-            this.joystick.startX = pos.x;
-            this.joystick.startY = pos.y;
-            this.joystick.deltaX = 0;
-            this.joystick.deltaY = 0;
-            // Save current camera rotation as starting point
-            this.joystick.startRotationX = this.state.targetRotation.x;
-            this.joystick.startRotationY = this.state.targetRotation.y;
+            this.crosshair.touchStartX = pos.x;
+            this.crosshair.touchStartY = pos.y;
+            this.crosshair.startX = this.crosshair.offsetX;
+            this.crosshair.startY = this.crosshair.offsetY;
+            
+            // Show scope UI
+            this.showAimUI(true);
+            
+            // Rifle scope animation
+            this.rifle?.playScopeIn();
         };
         
         const onMove = (e) => {
-            if (!this.joystick.active) return;
+            if (!this.state.isAiming) return;
             e.preventDefault();
-            const pos = getPos(e);
-            this.updateJoystick(pos.x, pos.y);
             
-            // Mark as inputting when joystick is moved
-            if (Math.abs(this.joystick.deltaX) > 0.1 || Math.abs(this.joystick.deltaY) > 0.1) {
-                this.state.isUserInputting = true;
-            }
+            const pos = getPos(e);
+            const deltaX = pos.x - this.crosshair.touchStartX;
+            const deltaY = pos.y - this.crosshair.touchStartY;
+            
+            // Convert to normalized offset (-1 to 1)
+            const sensitivity = CONFIG.aimSensitivity;
+            const limit = CONFIG.crosshairLimit;
+            
+            this.crosshair.offsetX = THREE.MathUtils.clamp(
+                this.crosshair.startX + deltaX * sensitivity,
+                -limit, limit
+            );
+            this.crosshair.offsetY = THREE.MathUtils.clamp(
+                this.crosshair.startY + deltaY * sensitivity,
+                -limit, limit
+            );
+            
+            // Update crosshair position
+            this.updateCrosshairUI();
         };
         
         const onEnd = () => {
-            // Shoot when joystick is released
-            let wasHit = false;
-            if (this.joystick.active) {
-                wasHit = this.shoot();
-                // Mark first shot done - hide tutorial elements permanently
-                if (!this.joystick.firstShotDone) {
-                    this.joystick.firstShotDone = true;
-                    releaseHint?.classList.remove('visible');
-                }
-            }
+            if (!this.state.isAiming) return;
             
-            // Zoom out when released
+            // Shoot when released (Reload animation will play)
+            this.shoot();
+            
+            // End aiming
+            this.state.isAiming = false;
             this.state.targetFov = CONFIG.baseFov;
             
-            // Reset camera to initial position only on hit (not on miss)
-            if (wasHit) {
-                this.state.targetRotation.x = this.initialRotation.x;
-                this.state.targetRotation.y = this.initialRotation.y;
-            }
+            // Reset crosshair
+            this.crosshair.offsetX = 0;
+            this.crosshair.offsetY = 0;
             
-            // Hide UI elements
-            zone.classList.remove('active');
+            // Hide scope UI
+            this.showAimUI(false);
+            this.updateCrosshairUI();
             
-            // Show tutorial animation only before first shot
-            if (!this.joystick.firstShotDone) {
-                stick.classList.add('tutorial');
-            }
-            
-            this.joystick.active = false;
-            this.joystick.deltaX = 0;
-            this.joystick.deltaY = 0;
-            this.state.isUserInputting = false;
-            stick.style.transform = 'translate(-50%, -50%)';
+            // После выстрела Reload анимация сама вернётся к Idle
+            // НЕ вызываем playScopeOut() - иначе конфликт анимаций
         };
         
-        // Listen on entire document for full-screen control
+        // Touch events
         document.addEventListener('touchstart', onStart, { passive: false });
-        document.addEventListener('mousedown', onStart);
         document.addEventListener('touchmove', onMove, { passive: false });
-        document.addEventListener('mousemove', onMove);
         document.addEventListener('touchend', onEnd);
+        
+        // Mouse events
+        document.addEventListener('mousedown', onStart);
+        document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onEnd);
-    }
-    
-    updateJoystick(x, y) {
-        const { startX, startY } = this.joystick;
         
-        // Calculate delta from start position
-        const dx = x - startX;
-        const dy = y - startY;
-        
-        // Normalize by screen size - full screen is the control area
-        // Moving across half the screen width = full speed
-        const screenScale = Math.min(window.innerWidth, window.innerHeight) * 0.5;
-        
-        this.joystick.deltaX = dx / screenScale;
-        this.joystick.deltaY = dy / screenScale;
-        
-        // Clamp to -1 to 1 range
-        this.joystick.deltaX = Math.max(-1, Math.min(1, this.joystick.deltaX));
-        this.joystick.deltaY = Math.max(-1, Math.min(1, this.joystick.deltaY));
-    }
-    
-    setupShootButton() {
-        const btn = document.getElementById('shoot-btn');
-        if (!btn) return;
-        
-        this.shootBtn = btn;
-        
-        const onShoot = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const ripple = document.createElement('div');
-            ripple.className = 'ripple';
-            btn.appendChild(ripple);
-            setTimeout(() => ripple.remove(), 400);
-            
-            this.shoot();
-        };
-        
-        btn.addEventListener('touchstart', onShoot, { passive: false });
-        btn.addEventListener('mousedown', onShoot);
-    }
-    
-    setupInput() {
-        // Spacebar to shoot (only when not in debug mode)
+        // Spacebar to shoot (for testing)
         document.addEventListener('keydown', (e) => {
-            if (this.debugEditor?.active) return;
-            
             if (e.code === 'Space' && !e.repeat) {
                 e.preventDefault();
-                this.shoot();
+                if (!this.state.isAiming) {
+                    this.state.isAiming = true;
+                    this.state.targetFov = CONFIG.zoomedFov;
+                    this.showAimUI(true);
+                    this.rifle?.playScopeIn();
+                }
             }
         });
         
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                if (this.state.isAiming) {
+                    this.shoot();
+                    this.state.isAiming = false;
+                    this.state.targetFov = CONFIG.baseFov;
+                    this.showAimUI(false);
+                    // Reload анимация сама вернётся к Idle
+                }
+            }
+        });
+        
+        // CTA button
         document.getElementById('cta')?.addEventListener('click', () => {
-            sdk.install(); // Redirects to store via SDK
+            sdk.install();
         });
         
         window.addEventListener('resize', () => this.resize());
     }
     
-    // ============ AUTO-AIM SYSTEM ============
-    
-    /**
-     * Find the nearest animal that's close to where we're looking
-     */
-    findNearestAnimalInView() {
-        const aa = CONFIG.autoAim;
-        if (!aa?.enabled) return null;
+    showAimUI(show) {
+        const scope = document.getElementById('scope');
+        const crosshair = document.getElementById('crosshair');
+        const tapHint = document.getElementById('tap-hint');
+        const releaseHint = document.getElementById('release-hint');
+        const joystick = document.getElementById('joystick-zone');
+        const killsPanel = document.getElementById('kills-panel');
         
-        let nearest = null;
-        let nearestScreenDist = aa.screenRadius || 150;
-        
-        this.animalManager.getAlive().forEach(animal => {
-            const worldPos = animal.position.clone();
-            worldPos.y += 0.8;
-            
-            const screenPos = worldPos.clone().project(this.camera);
-            
-            const screenX = screenPos.x * window.innerWidth / 2;
-            const screenY = screenPos.y * window.innerHeight / 2;
-            const distFromCenter = Math.sqrt(screenX * screenX + screenY * screenY);
-            
-            if (screenPos.z < 1 && distFromCenter < nearestScreenDist) {
-                nearestScreenDist = distFromCenter;
-                nearest = { animal, screenX, screenY, distFromCenter };
-            }
-        });
-        
-        return nearest;
-    }
-    
-    /**
-     * Apply auto-aim correction - smooth and precise
-     */
-    applyAutoAim() {
-        const aa = CONFIG.autoAim;
-        if (!aa?.enabled) return;
-        
-        // Don't apply when joystick is active (user is aiming)
-        if (this.joystick.active) return;
-        
-        // Don't apply when user is actively controlling
-        if (this.state.isUserInputting) return;
-        
-        const target = this.findNearestAnimalInView();
-        if (!target) return;
-        
-        const deadzone = aa.deadzone || 50;
-        const baseStrength = aa.strength || 0.0003;
-        const precisionStrength = aa.precisionStrength || 0.0008; // Stronger when close
-        
-        // Don't correct if already in deadzone
-        if (target.distFromCenter < deadzone) return;
-        
-        // Calculate distance zones
-        const distanceFromDeadzone = target.distFromCenter - deadzone;
-        const maxDistance = (aa.screenRadius || 200) - deadzone;
-        const normalizedDist = Math.min(distanceFromDeadzone / maxDistance, 1);
-        
-        // Adaptive strength: weak when far, stronger when close (for precision)
-        // Use smooth curve: starts slow, accelerates as we get closer
-        const distanceFactor = 1 - normalizedDist; // 1 when close, 0 when far
-        const adaptiveStrength = baseStrength + (precisionStrength - baseStrength) * (1 - distanceFactor * distanceFactor);
-        
-        // Smooth easing - cubic ease-out for natural feel
-        const eased = 1 - Math.pow(1 - normalizedDist, 3);
-        
-        // Final strength with smooth easing
-        const finalStrength = adaptiveStrength * eased;
-        
-        // Direction to target
-        const dirX = target.screenX / target.distFromCenter;
-        const dirY = target.screenY / target.distFromCenter;
-        
-        // Calculate correction - proportional to distance but capped
-        const maxStep = aa.maxStep || 0.001;
-        const step = Math.min(finalStrength * distanceFromDeadzone, maxStep);
-        
-        const correctionY = -dirX * step;
-        const correctionX = dirY * step;
-        
-        // Apply smoothly to both rotations
-        this.state.currentRotation.y += correctionY;
-        this.state.currentRotation.x += correctionX;
-        this.state.targetRotation.y += correctionY;
-        this.state.targetRotation.x += correctionX;
-        
-        // Clamp pitch and yaw
-        const minX = CONFIG.pitchLimit.min;
-        const maxX = CONFIG.pitchLimit.max;
-        const minY = CONFIG.yawLimit.min;
-        const maxY = CONFIG.yawLimit.max;
-        this.state.targetRotation.x = THREE.MathUtils.clamp(this.state.targetRotation.x, minX, maxX);
-        this.state.currentRotation.x = THREE.MathUtils.clamp(this.state.currentRotation.x, minX, maxX);
-        this.state.targetRotation.y = THREE.MathUtils.clamp(this.state.targetRotation.y, minY, maxY);
-        this.state.currentRotation.y = THREE.MathUtils.clamp(this.state.currentRotation.y, minY, maxY);
-    }
-    
-    // ============ TARGETING ============
-    
-    checkTargeting() {
-        if (this.bulletTime.active) return;
-        
-        this.raycaster.setFromCamera(this.screenCenter, this.camera);
-        
-        let closestAnimal = null;
-        let closestDistance = Infinity;
-        
-        this.animalManager.getAlive().forEach(animal => {
-            const animalPos = animal.position.clone();
-            animalPos.y += 0.8;
-            
-            const toAnimal = animalPos.clone().sub(this.camera.position);
-            const rayDir = this.raycaster.ray.direction;
-            const dot = toAnimal.dot(rayDir);
-            
-            if (dot < 0) return;
-            
-            const closest = this.camera.position.clone().add(rayDir.clone().multiplyScalar(dot));
-            const dist = closest.distanceTo(animalPos);
-            const targetRadius = animal.userData.boundingRadius * 2;
-            
-            if (dist < targetRadius) {
-                const actualDist = this.camera.position.distanceTo(animalPos);
-                if (actualDist < closestDistance) {
-                    closestDistance = actualDist;
-                    closestAnimal = animal;
-                }
-            }
-        });
-        
-        this.state.targetedAnimal = closestAnimal;
-        
-        const targetInfo = document.getElementById('target-info');
-        
-        // Update 3D labels
-        this.animalManager.hideAllLabels();
-        
-        if (closestAnimal) {
-            // Show 3D label for targeted animal
-            this.animalManager.showLabel(closestAnimal);
-            
-            targetInfo?.classList.add('visible');
-            document.getElementById('target-distance').textContent = 
-                Math.round(closestDistance) + 'm';
+        if (show) {
+            scope?.classList.add('visible');
+            crosshair?.classList.add('visible');
+            releaseHint?.classList.add('visible');
+            // Hide these when aiming
+            if (tapHint) tapHint.style.display = 'none';
+            if (joystick) joystick.style.display = 'none';
+            if (killsPanel) killsPanel.style.display = 'none';
         } else {
-            targetInfo?.classList.remove('visible');
+            scope?.classList.remove('visible');
+            crosshair?.classList.remove('visible');
+            releaseHint?.classList.remove('visible');
+            // Show these when not aiming
+            if (tapHint) tapHint.style.display = '';
+            if (joystick) joystick.style.display = '';
+            if (killsPanel) killsPanel.style.display = '';
         }
     }
     
-    // ============ SHOOTING ============
+    updateCrosshairUI() {
+        const crosshair = document.getElementById('crosshair');
+        if (!crosshair) return;
+        
+        const offsetX = this.crosshair.offsetX * window.innerWidth * 0.3;
+        const offsetY = this.crosshair.offsetY * window.innerHeight * 0.3;
+        
+        crosshair.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`;
+    }
     
     /**
-     * Shoot - returns true if hit, false if miss
+     * Check what we're aiming at (raycast from camera through crosshair)
+     */
+    checkTargeting() {
+        if (!this.currentAnimal || !this.currentAnimal.userData.alive) return null;
+        
+        // Create ray from camera through crosshair position (center of screen + offset)
+        const crosshairPos = new THREE.Vector2(
+            this.crosshair.offsetX * 0.5,
+            -this.crosshair.offsetY * 0.5
+        );
+        
+        this.raycaster.setFromCamera(crosshairPos, this.camera);
+        
+        // Check if ray is close enough to the animal
+        const animalPos = this.currentAnimal.position.clone();
+        animalPos.y += 0.8; // Center of body
+        
+        const toAnimal = animalPos.clone().sub(this.camera.position);
+        const rayDir = this.raycaster.ray.direction;
+        const dot = toAnimal.dot(rayDir);
+        
+        if (dot < 0) return null;
+        
+        // Find closest point on ray to animal
+        const closest = this.camera.position.clone().add(rayDir.clone().multiplyScalar(dot));
+        const dist = closest.distanceTo(animalPos);
+        
+        // Larger hit radius for easier aiming
+        const targetRadius = (this.currentAnimal.userData.boundingRadius || 1) * 2.5;
+        
+        if (dist < targetRadius) {
+            return this.currentAnimal;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Shoot
      */
     shoot() {
-        if (!this.state.canShoot || this.bulletTime.active) return false;
-        if (this.debugEditor?.active) return false; // No shooting in debug mode
+        if (!this.state.canShoot || this.bulletTime.active) return;
+        if (this.state.gameEnded) return;
         
-        // Init audio if needed and play gunshot
         this.initAudio();
         this.audio.playGunshot();
-        
+        this.rifle?.playReload();
         this.state.canShoot = false;
         
-        // Check if we have a target
-        if (this.state.targetedAnimal) {
+        const targetAnimal = this.checkTargeting();
+        
+        if (targetAnimal) {
             // Hit - start bullet time
-            this.animalManager.hideAllLabels(); // Hide labels during bullet time
-            this.state.timeScale = this.bulletTime.start(this.state.targetedAnimal);
+            this.animalManager.hideAllLabels();
+            this.state.timeScale = this.bulletTime.start(targetAnimal);
             this.setBulletTimeUI(true);
-            // Camera shake is now triggered inside bulletTime.start()
-            return true;
         } else {
-            // Miss - show miss text and camera shake
+            // Miss
             this.showMiss();
             this.startCameraShake(0.7);
             setTimeout(() => { this.state.canShoot = true; }, CONFIG.shootCooldown);
-            return false;
         }
     }
     
@@ -686,7 +444,7 @@ export class Game {
     }
     
     startCameraShake(intensityMultiplier = 1.0) {
-        const shake = CONFIG.cameraShake || { intensity: 0.015, duration: 300 };
+        const shake = CONFIG.cameraShake || { intensity: 0.02, duration: 250 };
         this.state.shakeIntensity = shake.intensity * intensityMultiplier;
         this.state.shakeTime = shake.duration;
     }
@@ -694,14 +452,12 @@ export class Game {
     updateCameraShake(delta) {
         if (this.state.shakeTime <= 0) return { x: 0, y: 0 };
         
-        const shake = CONFIG.cameraShake || { frequency: 25 };
+        const shake = CONFIG.cameraShake || { frequency: 30 };
         this.state.shakeTime -= delta * 1000;
         
-        // Decay intensity over time
-        const progress = Math.max(0, this.state.shakeTime / (CONFIG.cameraShake?.duration || 300));
+        const progress = Math.max(0, this.state.shakeTime / (CONFIG.cameraShake?.duration || 250));
         const intensity = this.state.shakeIntensity * progress;
         
-        // High frequency shake
         const time = Date.now() * shake.frequency * 0.001;
         const shakeX = Math.sin(time * 13.7) * intensity;
         const shakeY = Math.cos(time * 17.3) * intensity;
@@ -710,10 +466,26 @@ export class Game {
     }
     
     setBulletTimeUI(active) {
-        ['scope', 'crosshair', 'joystick-zone', 'target-info'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.toggle('hidden', active);
-        });
+        const elementsToHide = ['joystick-zone', 'kills-panel', 'tap-hint', 'release-hint'];
+        
+        if (active) {
+            // Hide all UI during bullet time
+            this.showAimUI(false);
+            elementsToHide.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            // Hide rifle during bullet time
+            this.rifle?.setVisible(false);
+        } else {
+            // Show UI after bullet time
+            elementsToHide.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = '';
+            });
+            // Show rifle after bullet time
+            this.rifle?.setVisible(true);
+        }
     }
     
     onBulletHit(animal) {
@@ -727,16 +499,20 @@ export class Game {
         this.showHitEffect();
         this.showScorePopup(animal.userData.points);
         
+        // Animate death
         this.animalManager.animateDeath(animal, () => {
-            // Респавн только если НЕ используются spawn points
-            if (!CONFIG.spawnPoints || CONFIG.spawnPoints.length === 0) {
-                this.animalManager.spawn();
+            this.animalManager.remove(animal);
+            
+            // Check if all spawn points completed
+            const totalTargets = CONFIG.spawnPoints?.length || CONFIG.showCtaAfterKills;
+            if (this.state.kills >= totalTargets) {
+                this.state.gameEnded = true;
+                setTimeout(() => this.showCTA(), 500);
+            } else {
+                // Spawn next animal from next spawn point
+                setTimeout(() => this.spawnNextAnimal(), CONFIG.nextSpawnDelay || 800);
             }
         });
-        
-        if (this.state.kills >= CONFIG.showCtaAfterKills) {
-            setTimeout(() => this.showCTA(), 500);
-        }
     }
     
     // ============ UI ============
@@ -744,6 +520,13 @@ export class Game {
     updateScoreUI() {
         const el = document.getElementById('score');
         if (el) el.textContent = this.state.score;
+        
+        // Update kills counter - use spawn points count or config
+        const killsEl = document.getElementById('kills-count');
+        if (killsEl) {
+            const totalTargets = CONFIG.spawnPoints?.length || CONFIG.showCtaAfterKills;
+            killsEl.textContent = `${this.state.kills}/${totalTargets}`;
+        }
     }
     
     showHitEffect() {
@@ -765,13 +548,12 @@ export class Game {
     showCTA() {
         const el = document.getElementById('cta');
         if (el) el.style.display = 'block';
-        sdk.finish(); // Mark playable as complete
+        sdk.finish();
         
-        // Auto redirect after delay
         const delay = CONFIG.autoRedirectDelay || 0;
         if (delay > 0) {
             setTimeout(() => {
-                sdk.install(); // Redirects to store via SDK
+                sdk.install();
             }, delay);
         }
     }
@@ -786,37 +568,25 @@ export class Game {
     // ============ CAMERA UPDATE ============
     
     updateCamera(delta) {
-        // Joystick input - DIRECT 1:1 control, no accumulation
-        if (this.joystick.active) {
-            const sensitivity = CONFIG.joystickSpeed || 0.15;
-            
-            // Direct mapping: finger position -> camera rotation offset from start
-            this.state.targetRotation.y = this.joystick.startRotationY - this.joystick.deltaX * sensitivity;
-            this.state.targetRotation.x = this.joystick.startRotationX - this.joystick.deltaY * sensitivity;
-            
-            // Clamp
-            this.state.targetRotation.x = THREE.MathUtils.clamp(
-                this.state.targetRotation.x,
-                CONFIG.pitchLimit.min,
-                CONFIG.pitchLimit.max
-            );
-            this.state.targetRotation.y = THREE.MathUtils.clamp(
-                this.state.targetRotation.y,
-                CONFIG.yawLimit.min,
-                CONFIG.yawLimit.max
-            );
-        } else {
-            // Auto-aim only when joystick not active
-            this.applyAutoAim();
+        // Update target lookAt if we have an animal
+        if (this.currentAnimal && this.currentAnimal.userData.alive) {
+            this.cameraLookAt.target.copy(this.getAnimalLookAtPosition(this.currentAnimal));
         }
+        
+        // Smooth lookAt interpolation
+        const smoothness = CONFIG.cameraFollow?.smoothness || 0.05;
+        const t = 1 - Math.pow(1 - smoothness, delta * 60);
+        this.cameraLookAt.current.lerp(this.cameraLookAt.target, t);
         
         // Apply camera shake
         const shake = this.updateCameraShake(delta);
         
-        // Apply rotation directly to camera - instant, no smoothing
-        this.camera.rotation.order = 'YXZ';
-        this.camera.rotation.y = this.state.targetRotation.y + shake.y;
-        this.camera.rotation.x = this.state.targetRotation.x + shake.x;
+        // Camera stays on tower, just looks at animal
+        const lookAtWithShake = this.cameraLookAt.current.clone();
+        lookAtWithShake.x += shake.x * 10;
+        lookAtWithShake.y += shake.y * 10;
+        
+        this.camera.lookAt(lookAtWithShake);
     }
     
     // ============ GAME LOOP ============
@@ -827,7 +597,7 @@ export class Game {
         // Debug mode - free fly camera
         if (this.debugEditor?.active) {
             this.debugEditor.update(delta);
-            this.animalManager.update(delta, 1); // Keep animals moving
+            this.animalManager.update(delta, 1);
             this.animalManager.updateLabels();
             this.renderer.render(this.scene, this.camera);
             return;
@@ -839,15 +609,13 @@ export class Game {
                 const hitAnimal = this.bulletTime.end();
                 this.onBulletHit(hitAnimal);
                 this.state.timeScale = 1;
-                this.state.targetedAnimal = null;
                 this.setBulletTimeUI(false);
-                // Camera shake on return (50% weaker)
                 this.startCameraShake(0.5);
                 setTimeout(() => { this.state.canShoot = true; }, CONFIG.shootCooldown);
             }
             this.renderer.render(this.scene, this.bulletTime.camera);
         } else {
-            // FOV (frame-rate independent)
+            // FOV interpolation
             const zoomSmoothing = 1 - Math.pow(1 - CONFIG.zoomSpeed, delta * 60);
             this.state.currentFov = THREE.MathUtils.lerp(
                 this.state.currentFov,
@@ -857,10 +625,15 @@ export class Game {
             this.camera.fov = this.state.currentFov;
             this.camera.updateProjectionMatrix();
             
+            // Update camera follow
             this.updateCamera(delta);
-            this.checkTargeting();
+            
+            // Update rifle animations
+            this.rifle?.update(delta);
+            
+            // Update animals
             this.animalManager.update(delta, this.state.timeScale);
-            this.animalManager.updateLabels(); // Update 3D label positions
+            this.animalManager.updateLabels();
             
             this.renderer.render(this.scene, this.camera);
         }

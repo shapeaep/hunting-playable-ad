@@ -20,33 +20,36 @@
     <canvas id="game"></canvas>
     
     <div id="ui">
+        <!-- Scope overlay (shown when aiming) -->
         <div id="scope">
             <div class="vignette"></div>
             <div class="inner-ring"></div>
         </div>
         
+        <!-- Crosshair (shown when aiming) -->
         <div id="crosshair">
             <div class="h-line"></div>
             <div class="v-line"></div>
             <div class="center"></div>
         </div>
         
-        <div id="score-panel">
-            <div class="label">Score</div>
-            <div class="value" id="score">0</div>
+        <div id="kills-panel">
+            <div class="kills-label">Targets</div>
+            <div class="kills-value" id="kills-count">0/3</div>
         </div>
         
-        <div id="target-info">
-            <span class="label">Distance</span>
-            <span class="distance" id="target-distance">45m</span>
+        <!-- Tap to aim hint (shown before aiming) -->
+        <div id="tap-hint">
+            <div class="hint-text">TAP TO AIM</div>
         </div>
         
-        <!-- Hint removed - tutorial animation shows instructions -->
+        <!-- Release hint (shown only when aiming) -->
+        <div id="release-hint">RELEASE TO SHOOT</div>
         
+        <!-- Joystick area -->
         <div id="joystick-zone">
             <div id="joystick-base"></div>
-            <div id="joystick-stick" class="tutorial"></div>
-            <div id="release-hint">Release to shoot</div>
+            <div id="joystick-stick"></div>
         </div>
         
         <div id="hit-effect"></div>

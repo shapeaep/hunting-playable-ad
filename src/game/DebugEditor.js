@@ -184,10 +184,11 @@ export class DebugEditor {
         // Save current camera state
         this.savedCameraPos = this.camera.position.clone();
         this.savedCameraRot = {
-            x: this.game.state.targetRotation.x,
-            y: this.game.state.targetRotation.y
+            x: this.camera.rotation.x,
+            y: this.camera.rotation.y
         };
         this.savedFov = this.camera.fov;
+        this.savedLookAt = this.game.cameraLookAt?.current?.clone();
         
         // Reset FOV to normal (not zoomed)
         this.camera.fov = CONFIG.baseFov;
@@ -195,8 +196,6 @@ export class DebugEditor {
         
         // Set camera to free look mode
         this.camera.rotation.order = 'YXZ';
-        this.camera.rotation.x = this.savedCameraRot.x;
-        this.camera.rotation.y = this.savedCameraRot.y;
         
         // Hide game UI
         this.setGameUIVisible(false);
@@ -216,23 +215,27 @@ export class DebugEditor {
         // Exit pointer lock
         document.exitPointerLock();
         
-        // Restore camera position
-        if (this.savedCameraPos) {
-            this.camera.position.copy(this.savedCameraPos);
-        } else {
-            this.camera.position.set(0, CONFIG.towerHeight, 0);
-        }
-        if (this.savedCameraRot) {
-            this.game.state.targetRotation.x = this.savedCameraRot.x;
-            this.game.state.targetRotation.y = this.savedCameraRot.y;
-            this.game.state.currentRotation.x = this.savedCameraRot.x;
-            this.game.state.currentRotation.y = this.savedCameraRot.y;
-        }
-        if (this.savedFov) {
-            this.camera.fov = this.savedFov;
-            this.game.state.currentFov = this.savedFov;
-            this.game.state.targetFov = this.savedFov;
-            this.camera.updateProjectionMatrix();
+        // Restore camera position to tower
+        this.camera.position.set(0, CONFIG.towerHeight, 0);
+        
+        // Reset camera rotation (important!)
+        this.camera.rotation.set(0, 0, 0);
+        this.camera.rotation.order = 'YXZ';
+        
+        // Restore FOV
+        this.camera.fov = CONFIG.baseFov;
+        this.game.state.currentFov = CONFIG.baseFov;
+        this.game.state.targetFov = CONFIG.baseFov;
+        this.camera.updateProjectionMatrix();
+        
+        // Restore lookAt - if we have an animal, look at it
+        if (this.game.currentAnimal && this.game.currentAnimal.userData.alive) {
+            const lookAt = this.game.getAnimalLookAtPosition(this.game.currentAnimal);
+            this.game.cameraLookAt.current.copy(lookAt);
+            this.game.cameraLookAt.target.copy(lookAt);
+        } else if (this.savedLookAt && this.game.cameraLookAt) {
+            this.game.cameraLookAt.current.copy(this.savedLookAt);
+            this.game.cameraLookAt.target.copy(this.savedLookAt);
         }
         
         // Show game UI
@@ -249,7 +252,7 @@ export class DebugEditor {
     }
     
     setGameUIVisible(visible) {
-        const elements = ['scope', 'crosshair', 'joystick-zone', 'score-display', 'target-info'];
+        const elements = ['scope', 'crosshair', 'joystick-zone', 'kills-panel', 'tap-hint', 'release-hint'];
         elements.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = visible ? '' : 'none';
@@ -518,7 +521,7 @@ export class DebugEditor {
             <div class="debug-panel">
                 <div class="debug-title">🔧 DEBUG MODE</div>
                 <div class="debug-section">
-                    <div class="debug-label">Camera Position</div>
+                    <div class="debug-label">Camera (Player) Position</div>
                     <div class="debug-coords">
                         X: <b id="debug-cam-x">0</b>
                         Y: <b id="debug-cam-y">0</b>
@@ -526,7 +529,13 @@ export class DebugEditor {
                     </div>
                 </div>
                 <div class="debug-section">
-                    <div class="debug-label">Ground Target</div>
+                    <div class="debug-label">Current Animal</div>
+                    <div class="debug-coords" id="debug-animal-info">
+                        No animal
+                    </div>
+                </div>
+                <div class="debug-section">
+                    <div class="debug-label">Ground Target (Click to place)</div>
                     <div class="debug-coords">
                         X: <b id="debug-target-x">0</b>
                         Z: <b id="debug-target-z">0</b>
@@ -706,6 +715,20 @@ export class DebugEditor {
         if (camX) camX.textContent = this.camera.position.x.toFixed(1);
         if (camY) camY.textContent = this.camera.position.y.toFixed(1);
         if (camZ) camZ.textContent = this.camera.position.z.toFixed(1);
+        
+        // Current animal info
+        const animalInfo = document.getElementById('debug-animal-info');
+        if (animalInfo) {
+            const animal = this.game.currentAnimal;
+            if (animal && animal.userData.alive) {
+                const type = animal.userData.type?.toUpperCase() || 'UNKNOWN';
+                const x = animal.position.x.toFixed(1);
+                const z = animal.position.z.toFixed(1);
+                animalInfo.innerHTML = `<b style="color:#2196F3">${type}</b> at X: <b>${x}</b> Z: <b>${z}</b>`;
+            } else {
+                animalInfo.textContent = 'No animal';
+            }
+        }
         
         // Target coords
         const targetX = document.getElementById('debug-target-x');

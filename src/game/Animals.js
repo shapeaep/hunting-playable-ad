@@ -384,23 +384,17 @@ export class AnimalManager {
     }
     
     /**
-     * Check if position is within camera's visible area
+     * Get random spawn position away from center
      */
-    isInCameraArea(x, z) {
-        const yawLimit = CONFIG.yawLimit || { min: -1.4, max: 1.4 };
-        // Calculate angle from camera (which looks along -Z initially)
-        const angle = Math.atan2(x, -z);
-        return angle >= yawLimit.min && angle <= yawLimit.max;
-    }
-    
-    /**
-     * Get random angle within camera's yaw limits
-     */
-    getSpawnAngle() {
-        const yawLimit = CONFIG.yawLimit || { min: -1.4, max: 1.4 };
-        // Random angle within yaw limits
-        // Camera yaw directly maps to world angle for spawning
-        return yawLimit.min + Math.random() * (yawLimit.max - yawLimit.min);
+    getRandomSpawnPosition() {
+        const { min, max } = CONFIG.spawnRadius;
+        const angle = Math.random() * Math.PI * 2;
+        const radius = min + Math.random() * (max - min);
+        
+        return {
+            x: Math.cos(angle) * radius,
+            z: Math.sin(angle) * radius
+        };
     }
     
     createMaterials() {
@@ -655,6 +649,89 @@ export class AnimalManager {
         });
     }
     
+    /**
+     * Spawn a random animal at a random position
+     */
+    spawnRandom() {
+        const types = CONFIG.animalTypes;
+        
+        // Pick random animal type based on chances
+        const rand = Math.random();
+        let type;
+        if (rand < types.deer.chance) {
+            type = 'deer';
+        } else if (rand < types.deer.chance + types.bear.chance) {
+            type = 'bear';
+        } else {
+            type = 'rabbit';
+        }
+        
+        // Get random spawn position
+        const pos = this.getRandomSpawnPosition();
+        
+        return this.spawnAnimal(type, pos.x, pos.z);
+    }
+    
+    /**
+     * Spawn specific animal at position
+     */
+    spawnAnimal(type, x, z) {
+        const types = CONFIG.animalTypes;
+        let animal;
+        
+        // Create animal based on type
+        if (type === 'deer') {
+            animal = this.createDeer();
+        } else if (type === 'bear') {
+            animal = this.createBear();
+        } else {
+            animal = this.createRabbit();
+        }
+        
+        const typeConfig = types[type] || types.deer;
+        
+        const y = this.getHeight(x, z);
+        animal.position.set(x, y, z);
+        
+        // Random direction
+        const dirAngle = Math.random() * Math.PI * 2;
+        const dirX = Math.sin(dirAngle);
+        const dirZ = Math.cos(dirAngle);
+        
+        // Preserve mixer and walkAction if they exist (for GLB models)
+        const existingMixer = animal.userData?.mixer;
+        const existingWalkAction = animal.userData?.walkAction;
+        
+        const speedMultiplier = typeConfig.speedMultiplier || 1.0;
+        const baseSpeed = CONFIG.animalSpeed.min + Math.random() * (CONFIG.animalSpeed.max - CONFIG.animalSpeed.min);
+        
+        animal.userData = {
+            type,
+            points: typeConfig.points,
+            boundingRadius: typeConfig.boundingRadius,
+            speedMultiplier,
+            speed: baseSpeed * speedMultiplier,
+            direction: new THREE.Vector3(dirX, 0, dirZ).normalize(),
+            changeTimer: 3 + Math.random() * 4,
+            walkCycle: Math.random() * Math.PI * 2,
+            alive: true,
+            mixer: existingMixer,
+            walkAction: existingWalkAction
+        };
+        
+        // Create 3D label for this animal
+        const label = this.createLabel(type, typeConfig.points);
+        animal.userData.label = label;
+        this.scene.add(label);
+        
+        // Animal model faces +X at rotation.y=0
+        animal.rotation.y = -Math.atan2(animal.userData.direction.z, animal.userData.direction.x);
+        
+        this.scene.add(animal);
+        this.animals.push(animal);
+        return animal;
+    }
+    
     spawn(spawnPointIndex = null) {
         const types = CONFIG.animalTypes;
         let type, animal, x, z;
@@ -686,14 +763,10 @@ export class AnimalManager {
                 type = 'rabbit';
             }
             
-            // Spawn within camera's visible area
-            const angle = this.getSpawnAngle();
-            const { min, max } = CONFIG.spawnRadius;
-            const radius = min + Math.random() * (max - min);
-            
-            // Camera looks at -Z, so use sin/cos directly with yaw angle
-            x = Math.sin(angle) * radius;
-            z = -Math.cos(angle) * radius;
+            // Random spawn position
+            const pos = this.getRandomSpawnPosition();
+            x = pos.x;
+            z = pos.z;
         }
         
         // Create animal based on type
@@ -752,7 +825,6 @@ export class AnimalManager {
     
     update(delta, timeScale) {
         const realDelta = delta * timeScale;
-        const yawLimit = CONFIG.yawLimit || { min: -1.4, max: 1.4 };
         
         // Update all animation mixers
         this.mixers.forEach(mixer => {
@@ -810,45 +882,18 @@ export class AnimalManager {
                 data.speed = baseSpeed * (data.speedMultiplier || 1.0);
             }
             
-            // Boundary check - keep animals in playable area
+            // Boundary check - keep animals in playable area (circular)
             const dist = Math.hypot(animal.position.x, animal.position.z);
-            const currentAngle = Math.atan2(animal.position.x, -animal.position.z);
-            
-            // Soft boundary - gradually steer back when approaching edges
-            const margin = 0.2; // radians of margin before hard turn
-            let needsSteer = false;
-            let steerAngle = 0;
-            
-            // Check if near yaw limit edges
-            if (currentAngle < yawLimit.min + margin) {
-                // Near left edge - steer right
-                steerAngle = yawLimit.min + 0.5;
-                needsSteer = true;
-            } else if (currentAngle > yawLimit.max - margin) {
-                // Near right edge - steer left
-                steerAngle = yawLimit.max - 0.5;
-                needsSteer = true;
-            }
-            
-            // Check if outside camera yaw range completely
-            if (currentAngle < yawLimit.min || currentAngle > yawLimit.max) {
-                // Turn back toward center
-                steerAngle = (yawLimit.min + yawLimit.max) / 2;
-                needsSteer = true;
-            }
-            
-            if (needsSteer) {
-                data.direction.set(Math.sin(steerAngle), 0, -Math.cos(steerAngle)).normalize();
-                data.changeTimer = 1 + Math.random() * 2;
-            }
+            const maxDist = CONFIG.spawnRadius.max + 10;
+            const minDist = 15;
             
             // Check radius bounds
-            if (dist > CONFIG.spawnRadius.max + 5) {
+            if (dist > maxDist) {
                 // Too far - turn toward center
                 data.direction.set(-animal.position.x, 0, -animal.position.z).normalize();
                 data.changeTimer = 1 + Math.random() * 2;
-            } else if (dist < 20) {
-                // Too close to tower - turn away
+            } else if (dist < minDist) {
+                // Too close to center - turn away
                 data.direction.set(animal.position.x, 0, animal.position.z).normalize();
                 data.changeTimer = 1 + Math.random() * 2;
             }
