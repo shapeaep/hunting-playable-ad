@@ -6,7 +6,7 @@ export const CONFIG = {
     animalCount: 1,  // Start with one animal at a time
     showCtaAfterKills: 3,  // Show CTA after 3 kills
     ctaUrl: 'https://play.google.com/store',
-    autoRedirectDelay: 2000,  // Auto redirect after CTA shows (ms), 0 = disabled
+    autoRedirectDelay: 1000,  // Auto redirect after CTA shows (ms), 0 = disabled
     
     // Random seed (change for different world generation)
     worldSeed: 55452,
@@ -126,7 +126,7 @@ export const CONFIG = {
     
     // Spawn timing
     firstSpawnDelay: 500,      // Delay before first animal spawns (ms)
-    nextSpawnDelay: 800,       // Delay before next animal spawns after kill (ms)
+    nextSpawnDelay: 300,       // Delay before next animal spawns after kill (ms)
     
     // Audio
     audio: {
